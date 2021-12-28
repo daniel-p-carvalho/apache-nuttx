@@ -8556,6 +8556,13 @@ endmenu
 menu "COMP Configuration"
 	depends on STM32_COMP && STM32_HAVE_IP_COMP_V2
 
+config STM32_COMP_INIT_DISABLED
+	bool "Do not enable the comparator at initialization"
+	depends on STM32_COMP
+	default n
+	---help---
+		The comparator is kept disabled until ioctl() enable command.
+
 config STM32_COMP1_OUT
 	bool "COMP1 GPIO Output"
 	depends on STM32_COMP1

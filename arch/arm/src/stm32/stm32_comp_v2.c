@@ -745,6 +745,7 @@ static int comp_config(FAR struct stm32_comp_s *priv)
 
   comp_putreg_csr(priv, regval);
 
+#ifndef CONFIG_STM32_COMP_INIT_DISABLED
   /* Enable Comparator */
 
   comp_enable(priv, true);
@@ -755,6 +756,7 @@ static int comp_config(FAR struct stm32_comp_s *priv)
     {
       comp_lock_set(priv, true);
     }
+#endif
 
   return OK;
 }
