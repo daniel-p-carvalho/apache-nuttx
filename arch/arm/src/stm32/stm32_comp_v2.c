@@ -899,8 +899,36 @@ static int comp_read(FAR struct comp_dev_s *dev)
 #ifdef CONFIG_COMP
 static int comp_ioctl(FAR struct comp_dev_s *dev, int cmd, unsigned long arg)
 {
-#warning "Missing logic"
-  return -ENOTTY;
+  int ret = OK;
+  FAR struct stm32_comp_s *priv = (FAR struct stm32_comp_s *)dev->ad_priv;
+
+  switch (cmd)
+    {
+      case ANIOC_STM32_COMP_ENABLE:
+        {
+          /* Comparator enable */
+
+          comp_enable(priv, true);
+          break;
+        }
+
+      case ANIOC_STM32_COMP_DISABLE:
+        {
+          /* Comparator disable */
+
+          comp_enable(priv, false);
+          break;
+        }
+
+      default:
+        {
+          aerr("ERROR: Unknown cmd: %d\n", cmd);
+          ret = -ENOTTY;
+          break;
+        }
+    }
+
+  return ret;
 }
 #endif
 

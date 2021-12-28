@@ -26,6 +26,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include <nuttx/analog/ioctl.h>
 
 #include "chip.h"
 

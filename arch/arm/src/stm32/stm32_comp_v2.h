@@ -31,6 +31,14 @@
  * Pre-processor definitions
  ****************************************************************************/
 
+/* IOCTL Commands
+ * Cmd: ANIOC_STM32_COMP_ENABLE      Arg:
+ * Cmd: ANIOC_STM32_COMP_DISABLE     Arg:
+ */
+
+#define ANIOC_STM32_COMP_ENABLE       _ANIOC(AN_STM32_COMP_FIRST + 0)
+#define ANIOC_STM32_COMP_DISABLE      _ANIOC(AN_STM32_COMP_FIRST + 1)
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/

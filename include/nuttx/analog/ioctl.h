@@ -104,6 +104,11 @@
 #define AN_MCP48XX_FIRST (AN_MAX1161X_FIRST + AN_MAX1161X_NCMDS)
 #define AN_MCP48XX_NCMDS 3
 
+/* See arch/arm/src/stm32/stm32_comp_v2.h */
+
+#define AN_STM32_COMP_FIRST (AN_MCP48XX_FIRST + AN_MCP48XX_NCMDS)
+#define AN_STM32_COMP_NCMDS 2
+
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
