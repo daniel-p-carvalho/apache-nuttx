@@ -72,6 +72,14 @@ struct emtds_params_s
   float va_tap2_cal;                  /* Phase A tap 2 calibration factor */
 };
 
+/* EMTDS private data structure  */
+
+struct emtds_s
+{
+  struct emtds_params_s      param;   /* EMTDS settings */
+  FAR void                   *priv;   /* Private data */
+};
+
 /* This structure defines the lower half EMTDS interface */
 
 struct emtds_dev_s;
