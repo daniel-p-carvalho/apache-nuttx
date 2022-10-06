@@ -1,5 +1,5 @@
 /****************************************************************************
- * boards/arm/gd32f4/gd32f450zk-eval/src/gd32f4xx_romfs.c
+ * boards/arm/stm32/nucleo-f446re/src/stm32_romfs_initialize.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,6 +18,8 @@
  *
  ****************************************************************************/
 
+/* This file provides contents of an optional ROMFS volume, mounted at boot */
+
 /****************************************************************************
  * Included Files
  ****************************************************************************/
@@ -32,26 +34,26 @@
 
 #include <nuttx/fs/fs.h>
 #include <nuttx/drivers/ramdisk.h>
-#include "gd32f4xx_romfs.h"
+#include "stm32_romfs.h"
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
 
-#ifndef CONFIG_GD32F4_ROMFS
-#  error "CONFIG_GD32F4_ROMFS must be defined"
+#ifndef CONFIG_STM32_ROMFS
+#  error "CONFIG_STM32_ROMFS must be defined"
 #else
 
-#ifndef CONFIG_GD32F4_ROMFS_IMAGEFILE
-#  error "CONFIG_GD32F4_ROMFS_IMAGEFILE must be defined"
+#ifndef CONFIG_STM32_ROMFS_IMAGEFILE
+#  error "CONFIG_STM32_ROMFS_IMAGEFILE must be defined"
 #endif
 
-#ifndef CONFIG_GD32F4_ROMFS_DEV_MINOR
-#  error "CONFIG_GD32F4_ROMFS_DEV_MINOR must be defined"
+#ifndef CONFIG_STM32_ROMFS_DEV_MINOR
+#  error "CONFIG_STM32_ROMFS_DEV_MINOR must be defined"
 #endif
 
-#ifndef CONFIG_GD32F4_ROMFS_MOUNTPOINT
-#  error "CONFIG_GD32F4_ROMFS_MOUNTPOINT must be defined"
+#ifndef CONFIG_STM32_ROMFS_MOUNTPOINT
+#  error "CONFIG_STM32_ROMFS_MOUNTPOINT must be defined"
 #endif
 
 #define NSECTORS(size) (((size) + ROMFS_SECTOR_SIZE - 1)/ROMFS_SECTOR_SIZE)
@@ -60,22 +62,22 @@
 #define STR(m) STR2(m)
 
 #define MKMOUNT_DEVNAME(m) "/dev/ram" STR(m)
-#define MOUNT_DEVNAME      MKMOUNT_DEVNAME(CONFIG_GD32F4_ROMFS_DEV_MINOR)
+#define MOUNT_DEVNAME      MKMOUNT_DEVNAME(CONFIG_STM32_ROMFS_DEV_MINOR)
 
 /****************************************************************************
  * Private Data
  ****************************************************************************/
 
 __asm__ (
-    "   .section .rodata                            \n"
-    "   .balign  16                                 \n"
-    "   .globl   romfs_data_begin                   \n"
-    "romfs_data_begin:                              \n"
-    "   .incbin " STR(CONFIG_GD32F4_ROMFS_IMAGEFILE)"\n"
-    "   .balign " STR(ROMFS_SECTOR_SIZE)           "\n"
-    "   .globl   romfs_data_end                     \n"
-    "romfs_data_end:                                \n"
-    );
+  "   .section .rodata                            \n"
+  "   .balign  16                                 \n"
+  "   .globl   romfs_data_begin                   \n"
+  "romfs_data_begin:                              \n"
+  "   .incbin " STR(CONFIG_STM32_ROMFS_IMAGEFILE)"\n"
+  "   .balign " STR(ROMFS_SECTOR_SIZE)           "\n"
+  "   .globl   romfs_data_end                     \n"
+  "romfs_data_end:                                \n"
+  );
 
 extern const uint8_t romfs_data_begin[];
 extern const uint8_t romfs_data_end[];
@@ -85,7 +87,7 @@ extern const uint8_t romfs_data_end[];
  ****************************************************************************/
 
 /****************************************************************************
- * Name: gd32_romfs_initialize
+ * Name: stm32_romfs_initialize
  *
  * Description:
  *   Registers the aboveincluded binary file as block device.
@@ -95,21 +97,21 @@ extern const uint8_t romfs_data_end[];
  *   Zero (OK) on success, a negated errno value on error.
  *
  * Assumptions/Limitations:
- *   Memory addresses [romfs_data_begin .. romfs_data_end) should contain
- *   ROMFS volume data, as included in the assembly snippet above.
+ *   Memory addresses [&romfs_data_begin .. &romfs_data_begin) should contain
+ *   ROMFS volume data, as included in the assembly snippet above (l. 84).
  *
  ****************************************************************************/
 
-int gd32_romfs_initialize(void)
+int stm32_romfs_initialize(void)
 {
   uintptr_t romfs_data_len;
   int  ret;
 
   /* Create a ROM disk for the /etc filesystem */
 
-  romfs_data_len = romfs_data_end - romfs_data_begin;
+  romfs_data_len = (uintptr_t)romfs_data_end - (uintptr_t)romfs_data_begin;
 
-  ret = romdisk_register(CONFIG_GD32F4_ROMFS_DEV_MINOR, romfs_data_begin,
+  ret = romdisk_register(CONFIG_STM32_ROMFS_DEV_MINOR, romfs_data_begin,
                          NSECTORS(romfs_data_len), ROMFS_SECTOR_SIZE);
   if (ret < 0)
     {
@@ -120,18 +122,18 @@ int gd32_romfs_initialize(void)
   /* Mount the file system */
 
   finfo("Mounting ROMFS filesystem at target=%s with source=%s\n",
-        CONFIG_GD32F4_ROMFS_MOUNTPOINT, MOUNT_DEVNAME);
+        CONFIG_STM32_ROMFS_MOUNTPOINT, MOUNT_DEVNAME);
 
-  ret = nx_mount(MOUNT_DEVNAME, CONFIG_GD32F4_ROMFS_MOUNTPOINT,
+  ret = nx_mount(MOUNT_DEVNAME, CONFIG_STM32_ROMFS_MOUNTPOINT,
                  "romfs", MS_RDONLY, NULL);
   if (ret < 0)
     {
       ferr("ERROR: nx_mount(%s,%s,romfs) failed: %d\n",
-           MOUNT_DEVNAME, CONFIG_GD32F4_ROMFS_MOUNTPOINT, ret);
+           MOUNT_DEVNAME, CONFIG_STM32_ROMFS_MOUNTPOINT, ret);
       return ret;
     }
 
   return OK;
 }
 
-#endif /* CONFIG_GD32F4_ROMFS */
+#endif /* CONFIG_STM32_ROMFS */

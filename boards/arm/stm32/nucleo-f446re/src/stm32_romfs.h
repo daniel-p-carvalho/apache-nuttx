@@ -1,5 +1,5 @@
 /****************************************************************************
- * boards/arm/gd32f4/gd32f450zk-eval/src/gd32f4xx_romfs.h
+ * boards/arm/stm32/nucleo-f446re/src/stm32_romfs.h
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __BOARDS_ARM_GD32F4_GD32F450ZK_EVAL_SRC_GD32F4XX_ROMFS_H
-#define __BOARDS_ARM_GD32F4_GD32F450ZK_EVAL_SRC_GD32F4XX_ROMFS_H
+#ifndef __BOARDS_ARM_STM32_NUCLEO_F446RE_SRC_STM32_ROMFS_H
+#define __BOARDS_ARM_STM32_NUCLEO_F446RE_SRC_STM32_ROMFS_H
 
 /****************************************************************************
  * Included Files
@@ -27,7 +27,7 @@
 
 #include <nuttx/config.h>
 
-#ifdef CONFIG_GD32F4_ROMFS
+#ifdef CONFIG_STM32_ROMFS
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -40,7 +40,7 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Name: gd32_romfs_initialize
+ * Name: stm32_romfs_initialize
  *
  * Description:
  *   Registers built-in ROMFS image as block device and mounts it.
@@ -49,14 +49,13 @@
  *   Zero (OK) on success, a negated errno value on error.
  *
  * Assumptions/Limitations:
- *   Memory addresses [romfs_data_begin .. romfs_data_end) should contain
- *   ROMFS volume data, as included in the assembly snippet in
- *   gd32f4xx_romfs.c.
+ *   Memory addresses [romfs_data_begin .. romfs_data_begin) should contain
+ *   ROMFS volume data, as included in the assembly snippet above (l. 84).
  *
  ****************************************************************************/
 
-int gd32_romfs_initialize(void);
+int stm32_romfs_initialize(void);
 
-#endif /* CONFIG_GD32F4_ROMFS */
+#endif /* CONFIG_STM32_ROMFS */
 
-#endif /* __BOARDS_ARM_GD32F4_GD32F450ZK_EVAL_SRC_GD32F4XX_ROMFS_H */
+#endif /* __BOARDS_ARM_STM32_NUCLEO_F446RE_SRC_STM32_ROMFS_H */
