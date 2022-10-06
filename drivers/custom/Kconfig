@@ -1,0 +1,14 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+menu "EMTDS Support"
+
+config DRIVER_EMTDS
+	bool "Energy Meter Tampering Detection System (EMTDS)"
+	default n
+	---help---
+		Enables building of an EMTDS upper half driver.
+
+endmenu
