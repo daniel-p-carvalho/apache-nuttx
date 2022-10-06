@@ -63,22 +63,44 @@
  * Public Types
  ****************************************************************************/
 
+/* EMTDS parameters */
+
+struct emtds_params_s
+{
+  float va_out;                       /* Phase A output RMS voltage  */
+  float va_tap1_cal;                  /* Phase A tap 1 calibration factor */
+  float va_tap2_cal;                  /* Phase A tap 2 calibration factor */
+};
+
 /* This structure defines the lower half EMTDS interface */
 
 struct emtds_dev_s;
 struct emtds_ops_s
 {
+  /* Start EMTDS action */
+
+  CODE int (*start)(FAR struct emtds_dev_s *dev);
+
+  /* Stop EMTDS action */
+
+  CODE int (*stop)(FAR struct emtds_dev_s *dev);
+
+  /* Set EMTDS parameters */
+
+  CODE int (*params_set)(FAR struct emtds_dev_s *dev,
+                         FAR struct emtds_params_s *param);
+
   /* Configure EMTDS */
 
   CODE int (*setup)(FAR struct emtds_dev_s *dev);
 
-  /* Disable EMTDS */
-
-  CODE int (*shutdown)(FAR struct emtds_dev_s *dev);
-
   /* Lower-half logic may support platform-specific ioctl commands */
 
   CODE int (*ioctl)(FAR struct emtds_dev_s *dev, int cmd, unsigned long arg);
+
+  /* Disable EMTDS */
+
+  CODE int (*shutdown)(FAR struct emtds_dev_s *dev);
 };
 
 /* EMTDS device structure used by the driver. The caller of emtds_register
@@ -129,5 +151,4 @@ int emtds_register(FAR const char *path, FAR struct emtds_dev_s *dev,
 #endif
 
 #endif /* CONFIG_DRIVER_EMTDS */
-
 #endif /* __INCLUDE_NUTTX_DRIVERS_EMTDS_H */
