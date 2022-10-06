@@ -104,6 +104,30 @@ struct emtds_dev_s
   FAR void                     *lower;   /* Reference to lower level drivers */
 };
 
+/****************************************************************************
+ * Public Function Prototypes
+ ****************************************************************************/
+
+#ifdef __cplusplus
+#define EXTERN extern "C"
+extern "C"
+{
+#else
+#define EXTERN extern
+#endif
+
+/****************************************************************************
+ * Name: emtds_register
+ ****************************************************************************/
+
+int emtds_register(FAR const char *path, FAR struct emtds_dev_s *dev,
+                   FAR void *lower);
+
+#undef EXTERN
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* CONFIG_DRIVER_EMTDS */
 
 #endif /* __INCLUDE_NUTTX_DRIVERS_EMTDS_H */
