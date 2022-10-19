@@ -36,6 +36,7 @@
 #include <debug.h>
 
 #include <nuttx/random.h>
+#include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/net/net.h>
 #include <nuttx/net/usrsock.h>
@@ -48,7 +49,7 @@
 
 struct usrsock_req_s
 {
-  sem_t    sem;               /* Request semaphore (only one outstanding
+  mutex_t  lock;              /* Request mutex (only one outstanding
                                * request) */
   sem_t    acksem;            /* Request acknowledgment notification */
   uint32_t newxid;            /* New transcation Id */
@@ -72,7 +73,7 @@ struct usrsock_req_s
 
 static struct usrsock_req_s g_usrsock_req =
 {
-  NXSEM_INITIALIZER(1, PRIOINHERIT_FLAGS_DISABLE),
+  NXMUTEX_INITIALIZER,
   NXSEM_INITIALIZER(0, PRIOINHERIT_FLAGS_DISABLE),
   0,
   0,
@@ -90,7 +91,7 @@ static struct usrsock_req_s g_usrsock_req =
 
 static ssize_t usrsock_iovec_do(FAR void *srcdst, size_t srcdstlen,
                                 FAR struct iovec *iov, int iovcnt,
-                                size_t pos, bool from_iov)
+                                size_t pos, bool from_iov, FAR bool *done)
 {
   FAR uint8_t *ioout = srcdst;
   FAR uint8_t *iovbuf;
@@ -117,7 +118,8 @@ static ssize_t usrsock_iovec_do(FAR void *srcdst, size_t srcdstlen,
     {
       /* Position beyond iovec. */
 
-      return -EINVAL;
+      total = -EINVAL;
+      goto out;
     }
 
   iovbuf = iov->iov_base;
@@ -175,6 +177,12 @@ static ssize_t usrsock_iovec_do(FAR void *srcdst, size_t srcdstlen,
           iov++;
           iovcnt--;
         }
+    }
+
+out:
+  if (done)
+    {
+      *done = !srclen && !iovcnt;
     }
 
   return total;
@@ -255,6 +263,12 @@ static ssize_t usrsock_handle_response(FAR struct usrsock_conn_s *conn,
        */
 
       conn->resp.inprogress = true;
+
+      /* This branch indicates successful processing and waiting
+       * for USRSOCK_EVENT_CONNECT_READY event.
+       */
+
+      conn->resp.result = 0;
     }
   else
     {
@@ -306,6 +320,13 @@ usrsock_handle_datareq_response(FAR struct usrsock_conn_s *conn,
        */
 
       conn->resp.inprogress = true;
+
+      /* This branch indicates successful processing and waiting
+       * for USRSOCK_EVENT_CONNECT_READY event.
+       */
+
+      conn->resp.result = 0;
+
       return sizeof(*datahdr);
     }
 
@@ -586,10 +607,10 @@ ssize_t usrsock_response(FAR const char *buffer, size_t len,
 
 ssize_t usrsock_iovec_get(FAR void *dst, size_t dstlen,
                           FAR const struct iovec *iov, int iovcnt,
-                          size_t pos)
+                          size_t pos, FAR bool *done)
 {
   return usrsock_iovec_do(dst, dstlen, (FAR struct iovec *)iov, iovcnt,
-                          pos, true);
+                          pos, true, done);
 }
 
 /****************************************************************************
@@ -600,7 +621,7 @@ ssize_t usrsock_iovec_put(FAR struct iovec *iov, int iovcnt, size_t pos,
                           FAR const void *src, size_t srclen)
 {
   return usrsock_iovec_do((FAR void *)src, srclen, iov, iovcnt,
-                          pos, false);
+                          pos, false, NULL);
 }
 
 /****************************************************************************
@@ -620,7 +641,7 @@ int usrsock_do_request(FAR struct usrsock_conn_s *conn,
 
   /* Set outstanding request for daemon to handle. */
 
-  net_lockedwait_uninterruptible(&req->sem);
+  net_lockedwait_uninterruptible(&req->lock);
   if (++req->newxid == 0)
     {
       ++req->newxid;
@@ -647,7 +668,7 @@ int usrsock_do_request(FAR struct usrsock_conn_s *conn,
 
   /* Free request line for next command. */
 
-  nxsem_post(&req->sem);
+  nxmutex_unlock(&req->lock);
   return ret;
 }
 
@@ -679,7 +700,7 @@ void usrsock_abort(void)
        * requests.
        */
 
-      ret = net_timedwait(&req->sem, 10);
+      ret = net_timedwait(&req->lock, 10);
       if (ret < 0)
         {
           if (ret != -ETIMEDOUT && ret != -EINTR)
@@ -690,7 +711,7 @@ void usrsock_abort(void)
         }
       else
         {
-          nxsem_post(&req->sem);
+          nxmutex_unlock(&req->lock);
         }
 
       /* Wake-up pending requests. */
