@@ -111,12 +111,15 @@
 #define W25_JEDEC_CAPACITY_32MBIT  0x16  /* 1024x4096 = 32Mbit memory capacity */
 #define W25_JEDEC_CAPACITY_64MBIT  0x17  /* 2048x4096 = 64Mbit memory capacity */
 #define W25_JEDEC_CAPACITY_128MBIT 0x18  /* 4096x4096 = 128Mbit memory capacity */
+#define W25_JEDEC_CAPACITY_256MBIT 0x19  /* 8192x4096 = 256Mbit memory capacity */
+
 
 #define NSECTORS_8MBIT             256   /* 256 sectors x 4096 bytes/sector = 1Mb */
 #define NSECTORS_16MBIT            512   /* 512 sectors x 4096 bytes/sector = 2Mb */
 #define NSECTORS_32MBIT            1024  /* 1024 sectors x 4096 bytes/sector = 4Mb */
 #define NSECTORS_64MBIT            2048  /* 2048 sectors x 4096 bytes/sector = 8Mb */
 #define NSECTORS_128MBIT           4096  /* 4096 sectors x 4096 bytes/sector = 16Mb */
+#define NSECTORS_256MBIT           8192  /* 8192 sectors x 4096 bytes/sector = 32Mb */
 
 /* Status register bit definitions */
 
@@ -446,6 +449,15 @@ static inline int w25_readid(struct w25_dev_s *priv)
        */
 
       else if (capacity == W25_JEDEC_CAPACITY_128MBIT)
+        {
+           priv->nsectors = NSECTORS_128MBIT;
+        }
+      /* 256M-bit / 32M-byte (33,554,432)
+       *
+       * W25Q256JV (Standard SPI)
+       */
+
+      else if (capacity == W25_JEDEC_CAPACITY_256MBIT)
         {
            priv->nsectors = NSECTORS_128MBIT;
         }
