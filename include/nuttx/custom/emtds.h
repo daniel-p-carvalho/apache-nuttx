@@ -64,6 +64,15 @@
  * Public Types
  ****************************************************************************/
 
+/* EMTDS VGEN taps */
+
+enum emtds_vgen_tap_e
+{
+  VGEN_TAP_LOW = 0,
+  VGEN_TAP_HIGH,
+  VGEN_TAP_AUTO = (1 << 7)
+};
+
 /* EMTDS parameters */
 
 struct emtds_params_s
