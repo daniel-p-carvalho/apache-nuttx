@@ -77,9 +77,16 @@ enum emtds_vgen_tap_e
 
 struct emtds_params_s
 {
-  float va_out;                       /* Phase A output RMS voltage  */
-  float va_tap1_cal;                  /* Phase A tap 1 calibration factor */
-  float va_tap2_cal;                  /* Phase A tap 2 calibration factor */
+  int32_t vgen_va_pi_sat_en;     /* Va pid output saturation enabled */
+  int32_t vgen_va_pi_ireset_en;  /* Va pid integrator reset enabled */
+  int32_t vgen_va_l_kp;          /* Va channel kp pid constant for tap low */
+  int32_t vgen_va_l_ki;          /* Va channel ki pid constant for tap low */
+  int32_t vgen_va_h_kp;          /* Va channel kp pid constant for tap high */
+  int32_t vgen_va_h_ki;          /* Va channel ki pid constant for tap high */
+  int32_t vgen_va_sat_min;       /* Va pid output min */
+  int32_t vgen_va_sat_max;       /* Va pid output min */
+
+  int32_t meas_va_gain;          /* Va channel voltage gain */
 };
 
 /* EMTDS private data structure  */
