@@ -73,10 +73,22 @@ enum emtds_vgen_tap_e
   VGEN_TAP_AUTO = (1 << 7)
 };
 
+/* EMTDS Digital DNA */
+
+struct emtds_dig_dna_s
+{
+  int32_t voltage;        /* Test voltage (not the setpoint) */
+  int32_t current;        /* Test current */
+  int32_t int_losses;     /* Internal losses */
+  int32_t thd;            /* Total Harmonic Distortion */
+  int32_t i_spectrum[16]; /* Current Spectrum */
+};
+
 /* EMTDS parameters */
 
 struct emtds_params_s
 {
+  int32_t vgen_va_setpoint;      /* Voltage generator setpoint */
   int32_t vgen_va_pi_sat_en;     /* Va pid output saturation enabled */
   int32_t vgen_va_pi_ireset_en;  /* Va pid integrator reset enabled */
   int32_t vgen_va_l_kp;          /* Va channel kp pid constant for tap low */
