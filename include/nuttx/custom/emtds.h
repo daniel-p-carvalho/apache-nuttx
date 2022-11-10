@@ -87,6 +87,7 @@ struct emtds_params_s
   int32_t vgen_va_sat_max;       /* Va pid output min */
 
   int32_t meas_va_gain;          /* Va channel voltage gain */
+  int32_t meas_ia_gain;          /* Ia channel current gain */
 };
 
 /* EMTDS private data structure  */
