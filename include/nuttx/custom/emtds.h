@@ -73,6 +73,16 @@ enum emtds_vgen_tap_e
   VGEN_TAP_AUTO = (1 << 7)
 };
 
+enum emtds_circuit_e
+{
+  AN = 0,
+  BN = 1,
+  CN = 2,
+  AB = 3,
+  AC = 4,
+  BC = 5
+};
+
 /* EMTDS Digital DNA */
 
 struct emtds_dig_dna_s
@@ -82,6 +92,21 @@ struct emtds_dig_dna_s
   int32_t int_losses;     /* Internal losses */
   int32_t thd;            /* Total Harmonic Distortion */
   int32_t i_spectrum[16]; /* Current Spectrum */
+};
+
+struct emtds_dig_dna_tolerances
+{
+  int32_t voltage_err_max;
+  int32_t current_err_max;
+  int32_t int_losses_err_max;
+  int32_t thd_err_max;
+};
+
+struct emtds_meter_dig_dna_s
+{
+  uint8_t                         model_id;
+  struct emtds_dig_dna_tolerances tolerances;
+  struct emtds_dig_dna_s          dig_dna[6];
 };
 
 /* EMTDS parameters */
