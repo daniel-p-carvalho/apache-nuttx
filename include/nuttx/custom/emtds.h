@@ -73,6 +73,33 @@ enum emtds_vgen_tap_e
   VGEN_TAP_AUTO = (1 << 7)
 };
 
+#ifdef CONFIG_EMTDS_V3_BOARD
+
+/* EMTDS VGEN current gain */
+
+enum emtds_vgen_i_gain_e
+{
+  VGEN_I_GAIN_25 = 0,
+  VGEN_I_GAIN_50,
+  VGEN_I_GAIN_100,
+  VGEN_I_GAIN_200
+};
+
+/* EMTDS VGEN output channel */
+
+enum emtds_out_chn_e
+{
+  OUT_CHN_AN = 0,
+  OUT_CHN_BN,
+  OUT_CHN_CN,
+  OUT_CHN_AB,
+  OUT_CHN_BC,
+  OUT_CHN_AC,
+  OUT_CHN_OFF
+};
+
+#endif
+
 enum emtds_circuit_e
 {
   AN = 0,
