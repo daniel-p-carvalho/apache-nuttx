@@ -93,8 +93,8 @@ enum emtds_out_chn_e
   OUT_CHN_BN,
   OUT_CHN_CN,
   OUT_CHN_AB,
-  OUT_CHN_BC,
   OUT_CHN_AC,
+  OUT_CHN_BC,
   OUT_CHN_OFF
 };
 
