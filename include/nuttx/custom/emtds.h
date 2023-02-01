@@ -114,19 +114,19 @@ enum emtds_circuit_e
 
 struct emtds_dig_dna_s
 {
-  int32_t voltage;        /* Test voltage (not the setpoint) */
-  int32_t current;        /* Test current */
-  int32_t int_losses;     /* Internal losses */
-  int32_t thd;            /* Total Harmonic Distortion */
-  int32_t i_spectrum[16]; /* Current Spectrum */
+  uint16_t voltage;        /* Test voltage (not the setpoint) */
+  uint16_t current;        /* Test current */
+  uint16_t int_losses;     /* Internal losses */
+  uint16_t thd;            /* Total Harmonic Distortion */
+  uint16_t i_spectrum[16]; /* Current Spectrum */
 };
 
 struct emtds_dig_dna_tolerances
 {
-  int32_t voltage_err_max;
-  int32_t current_err_max;
-  int32_t int_losses_err_max;
-  int32_t thd_err_max;
+  uint16_t voltage_err_max;
+  uint16_t current_err_max;
+  uint16_t int_losses_err_max;
+  uint16_t thd_err_max;
 };
 
 struct emtds_meter_dig_dna_s
