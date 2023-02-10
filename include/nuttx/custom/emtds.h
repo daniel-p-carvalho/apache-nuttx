@@ -73,8 +73,6 @@ enum emtds_vgen_tap_e
   VGEN_TAP_AUTO = (1 << 7)
 };
 
-#ifdef CONFIG_EMTDS_V3_BOARD
-
 /* EMTDS VGEN current gain */
 
 enum emtds_vgen_i_gain_e
@@ -97,8 +95,6 @@ enum emtds_out_chn_e
   OUT_CHN_BC,
   OUT_CHN_OFF
 };
-
-#endif
 
 enum emtds_circuit_e
 {
@@ -149,9 +145,11 @@ struct emtds_params_s
   int32_t vgen_va_h_ki;          /* Va channel ki pid constant for tap high */
   int32_t vgen_va_sat_min;       /* Va pid output min */
   int32_t vgen_va_sat_max;       /* Va pid output min */
+  int32_t vgen_out_chn;
 
   int32_t meas_va_gain;          /* Va channel voltage gain */
   int32_t meas_ia_gain;          /* Ia channel current gain */
+  int32_t meas_a_phase;          /* Channel A phase */
 };
 
 /* EMTDS private data structure  */
