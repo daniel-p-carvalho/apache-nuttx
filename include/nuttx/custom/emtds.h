@@ -103,7 +103,8 @@ enum emtds_circuit_e
   CN = 2,
   AB = 3,
   AC = 4,
-  BC = 5
+  BC = 5,
+  OFF
 };
 
 /* EMTDS Digital DNA */
@@ -132,6 +133,13 @@ struct emtds_meter_dig_dna_s
   struct emtds_dig_dna_s          dig_dna[6];
 };
 
+struct emtds_waveform_s
+{
+  uint16_t  offset;
+  uint16_t  length;
+  uint8_t   *data;
+};
+
 /* EMTDS parameters */
 
 struct emtds_params_s
@@ -145,7 +153,7 @@ struct emtds_params_s
   int32_t vgen_va_h_ki;          /* Va channel ki pid constant for tap high */
   int32_t vgen_va_sat_min;       /* Va pid output min */
   int32_t vgen_va_sat_max;       /* Va pid output min */
-  int32_t vgen_out_chn;
+  // int32_t vgen_out_chn;
 
   int32_t meas_va_gain;          /* Va channel voltage gain */
   int32_t meas_ia_gain;          /* Ia channel current gain */
