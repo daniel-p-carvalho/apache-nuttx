@@ -133,6 +133,14 @@ struct emtds_meter_dig_dna_s
   struct emtds_dig_dna_s          dig_dna[6];
 };
 
+struct emtds_dna_test_result_s
+{
+  uint8_t voltage_result;
+  uint8_t current_result;
+  uint8_t int_loss_result;
+  uint8_t thd_result;
+};
+
 struct emtds_waveform_s
 {
   uint16_t  offset;
