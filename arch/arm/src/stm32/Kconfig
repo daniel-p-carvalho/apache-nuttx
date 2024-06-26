@@ -8104,6 +8104,8 @@ config STM32_HRTIM_FAULT4
 
 endif # STM32_HRTIM_FAULTS
 
+if !STM32_STM32G47XX
+
 config STM32_HRTIM_CLK_FROM_PLL
 	bool "HRTIM Clock from PLL"
 	default n
@@ -8112,6 +8114,8 @@ config STM32_HRTIM_CLK_FROM_PLL
 		This configuration requires the following conditions:
 		  1) system clock is PLL,
 			2) SYSCLK and PCLK2 ratio must be 1 o 2.
+
+endif # STM32_STM32G47XX
 
 menu "HRTIM Master Configuration"
 	depends on STM32_HRTIM_MASTER
