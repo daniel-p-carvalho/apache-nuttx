@@ -5,6 +5,10 @@
 
 if ARCH_BOARD_B_G474E_DPOW1
 
+    config BG474EDPOW1_HIGHPRI
+	bool "High priority interrupt test"
+	default n
+
 #config SOME_CONFIG_INT
 #	int "Description"
 #	default 1
