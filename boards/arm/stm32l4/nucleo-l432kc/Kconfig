@@ -141,6 +141,35 @@ config NUCLEOL432KC_SPWM_PHASE_NUM
 
 endif
 
+menuconfig NUCLEOL432KC_1PH_INVERTER
+	bool "Sinusoidal PWM generator example"
+	default n
+
+if NUCLEOL432KC_1PH_INVERTER
+
+choice
+	prompt "Single phase inverter"
+	default NUCLEOL432KC_1PH_INVERTER_USE_TIM1
+
+config NUCLEOL432KC_1PH_INVERTER_USE_TIM1
+	bool "Use TIM1 as PWM source"
+
+endchoice
+
+config NUCLEOL432KC_1PH_INVERTER_PWM_FREQ
+	int "PWM frequency in Hz"
+	default 100000
+
+config NUCLEOL432KC_1PH_INVERTER_SAMPLES
+	int "Sine samples"
+	default 120
+
+config NUCLEOL432KC_1PH_INVERTER_FREQ
+	int "Waveform frequency in Hz"
+	default 60
+
+endif # NUCLEOL432KC_1PH_INVERTER
+
 menuconfig NUCLEOL432KC_DAC_WGEN
 	depends on (STM32L4_DAC_LL_OPS) && (STM32L4_DAC1_DMA) && (STM32L4_TIM2_DAC)
 	bool "Sinusoidal DAC wave generator example"

@@ -80,6 +80,10 @@ ifeq ($(CONFIG_NUCLEOL432KC_SPWM),y)
 CSRCS += stm32_spwm.c
 endif
 
+ifeq ($(CONFIG_NUCLEOL432KC_1PH_INVERTER),y)
+CSRCS += stm32_1ph_inverter.c
+endif
+
 ifeq ($(CONFIG_NUCLEOL432KC_DAC_WGEN),y)
 CSRCS += stm32_dac_wgen.c
 endif
