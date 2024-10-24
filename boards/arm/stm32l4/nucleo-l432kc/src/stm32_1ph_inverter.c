@@ -128,7 +128,8 @@ struct inverter_s
   uint16_t cmp[SAMPLES_NUM];                 /* PWM TIM compare table */
   uint16_t per;                              /* PWM TIM period */
   uint16_t samples;                          /* Modulation waveform samples num */
-  volatile uint16_t sample_now;              /* Current sample number for phase */
+  volatile uint16_t leg1_idx;                /* Current sample number for phase */
+  volatile uint16_t leg2_idx;                /* Current sample number for phase */
 };
 
 /****************************************************************************
@@ -139,7 +140,8 @@ static struct inverter_s g_inverter =
 {
   .waveform_freq = ((float)CONFIG_NUCLEOL432KC_1PH_INVERTER_FREQ),
   .samples       = SAMPLES_NUM,
-  .sample_now    = 0
+  .leg1_idx      = 0,
+  .leg2_idx      = SAMPLES_NUM / 2,
 };
 
 /****************************************************************************
@@ -179,7 +181,7 @@ static float waveform_func(float x)
 
   /* Sine modulation */
 
-  return sinf(x);
+  return (sinf(x) * 0.4) + 0.5;
 }
 
 /****************************************************************************
@@ -193,7 +195,6 @@ static float waveform_func(float x)
 static int waveform_init(struct inverter_s *inverter, float (*f)(float))
 {
   uint16_t i = 0;
-  uint16_t per = 0;
   int ret = 0;
 
   printf("Initialize waveform\n");
@@ -204,17 +205,12 @@ static int waveform_init(struct inverter_s *inverter, float (*f)(float))
 
   /* Initialize sine and PWM compare tables */
 
-  per = (uint16_t)(inverter->per * 0.8);
-
   for (i = 0; i < inverter->samples; i += 1)
     {
-      /* We need sine in range from 0 to 1.0 */
+      /* We need sine modulation in range from 0 to 1.0 */
 
       inverter->waveform[i] = f(inverter->phase_step * i);
-
-      DEBUGASSERT(inverter->waveform[i] >= 0.0 && inverter->waveform[i] <= 2 * M_PI);
-
-      inverter->cmp[i] = (uint16_t)(fabs(inverter->waveform[i]) * per);
+      inverter->cmp[i] = (uint16_t)(inverter->waveform[i] * inverter->per);
     }
 
   printf("\tsamples = %d\n", inverter->samples);
@@ -279,37 +275,21 @@ static void tim6_handler(void)
 
   /* Set new CMP for timers */
 
-  if (inverter->sample_now < (inverter->samples / 2))
-    {
-      /* Disable lower switch PWM */
-
-      PWM_CCR_UPDATE(pwm, 2, 0);
-      PWM_CCR_UPDATE(pwm, 3, 0);
-      
-      /* Set upper switch PWM duty cycle */
-
-      PWM_CCR_UPDATE(pwm, 1, inverter->cmp[inverter->sample_now]);
-      PWM_CCR_UPDATE(pwm, 4, inverter->per + 1);
-    }
-  else
-    {
-      /* Disable upper switch PWM */
-
-      PWM_CCR_UPDATE(pwm, 1, 0);
-      PWM_CCR_UPDATE(pwm, 4, 0);
-
-      /* Set lower switch PWM duty cycle */
-
-      PWM_CCR_UPDATE(pwm, 2, inverter->cmp[inverter->sample_now]);
-      PWM_CCR_UPDATE(pwm, 3, inverter->per + 1);
-    }
+  PWM_CCR_UPDATE(pwm, 1, inverter->cmp[inverter->leg1_idx]);
+  PWM_CCR_UPDATE(pwm, 2, inverter->cmp[inverter->leg2_idx]);
 
   /* Increase sample pointer */
 
-  inverter->sample_now += 1;
-  if (inverter->sample_now == inverter->samples)
+  inverter->leg1_idx += 1;
+  if (inverter->leg1_idx == inverter->samples)
     {
-      inverter->sample_now = 0;
+      inverter->leg1_idx = 0;
+    }
+  
+  inverter->leg2_idx += 1;
+  if (inverter->leg2_idx == inverter->samples)
+    {
+      inverter->leg2_idx = 0;
     }
 
   /* TODO: Software update */
@@ -469,9 +449,11 @@ static int inverter_tim1_start(struct inverter_s *inverter)
   /* Enable PWM outputs */
 
   PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT1, true);
+  PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT1N, true);
   PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT2, true);
-  PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT3, true);
-  PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT4, true);
+  PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT2N, true);
+  // PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT3, true);
+  // PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT4, true);
 
   /* Enable TIM1 */
 
@@ -490,8 +472,10 @@ static int inverter_tim1_stop(struct inverter_s *inverter)
 
   /* Disable PWM outputs */
 
-  PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT1, true);
-  PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT2, true);
+  PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT1, false);
+  PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT1N, false);
+  PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT2, false);
+  PWM_OUTPUTS_ENABLE(pwm, STM32L4_PWM_OUT2N, false);
 
   /* Disable TIM1 */
 
