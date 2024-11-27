@@ -443,6 +443,9 @@ struct stm32_dev_s
 #ifdef ADC_HAVE_JEXTCFG
   uint32_t jextcfg;          /* External event configuration for injected group */
 #endif
+#ifdef ADC_HAVE_DIFSELCFG
+  uint32_t difselcfg;        /* Differential mode configuration */
+#endif
 #ifdef ADC_HAVE_TIMER
   uint32_t tbase;            /* Base address of timer used by this ADC block */
   uint32_t pclck;            /* The PCLK frequency that drives this timer */
@@ -588,6 +591,9 @@ static int adc_extcfg_set(struct stm32_dev_s *priv, uint32_t extcfg);
 #ifdef ADC_HAVE_JEXTCFG
 static int adc_jextcfg_set(struct stm32_dev_s *priv, uint32_t jextcfg);
 #endif
+#ifdef ADC_HAVE_DIFSELCFG
+static int adc_difselcfg_set(struct stm32_dev_s *priv, uint32_t difselcfg);
+#endif
 
 static void adc_dumpregs(struct stm32_dev_s *priv);
 
@@ -610,6 +616,11 @@ static void adc_llops_extcfg_set(struct stm32_adc_dev_s *dev,
 #  ifdef ADC_HAVE_JEXTCFG
 static void adc_llops_jextcfg_set(struct stm32_adc_dev_s *dev,
                                   uint32_t jextcfg);
+#ifdef ADC_HAVE_DIFSELCFG
+static void  adc_llops_difsel_set(struct stm32_adc_dev_s *dev,
+                                   uint32_t difselcfg);
+#endif
+
 #  endif
 #  ifdef ADC_HAVE_DMA
 static int adc_regbufregister(struct stm32_adc_dev_s *dev,
@@ -672,6 +683,9 @@ static const struct stm32_adc_ops_s g_adc_llops =
 #  endif
 #  ifdef ADC_HAVE_JEXTCFG
   .jextcfg_set   = adc_llops_jextcfg_set,
+#  endif
+#  ifdef ADC_HAVE_DIFSELCFG
+  .difselcfg_set = adc_llops_difsel_set,
 #  endif
 #  ifdef ADC_HAVE_INJECTED
   .inj_get       = adc_injget,
@@ -773,6 +787,9 @@ static struct stm32_dev_s g_adcpriv1 =
 #ifdef ADC1_HAVE_JEXTCFG
   .jextcfg     = ADC1_JEXTCFG_VALUE,
 #endif
+#ifdef ADC1_HAVE_DIFSELCFG
+  .difselcfg   = ADC1_DIFSELCFG_VALUE,
+#endif
 #ifdef ADC1_HAVE_TIMER
   .trigger     = CONFIG_STM32_ADC1_TIMTRIG,
   .tbase       = ADC1_TIMER_BASE,
@@ -832,6 +849,9 @@ static struct stm32_dev_s g_adcpriv2 =
 #endif
 #ifdef ADC2_HAVE_JEXTCFG
   .jextcfg     = ADC2_JEXTCFG_VALUE,
+#endif
+#ifdef ADC2_HAVE_DIFSELCFG
+  .difselcfg   = ADC2_DIFSELCFG_VALUE,
 #endif
 #ifdef ADC2_HAVE_TIMER
   .trigger     = CONFIG_STM32_ADC2_TIMTRIG,
@@ -2744,6 +2764,12 @@ static void adc_configure(struct adc_dev_s *dev)
   adc_extcfg_set(priv, priv->extcfg);
 #endif
 
+#ifdef ADC_HAVE_DIFSELCFG
+  /* Configure differential mode */
+
+  adc_difselcfg_set(priv, priv->difselcfg);
+#endif
+
   /* Enable ADC */
 
   adc_enable(priv, true);
@@ -3271,6 +3297,27 @@ static int adc_jextcfg_set(struct stm32_dev_s *priv, uint32_t jextcfg)
       /* Write register */
 
       adc_modifyreg(priv, STM32_ADC_JEXTREG_OFFSET, clrbits, setbits);
+    }
+
+  return OK;
+}
+#endif
+
+/****************************************************************************
+ * Name: adc_difselcfg_set
+ ****************************************************************************/
+
+#ifdef ADC_HAVE_DIFSELCFG
+static int adc_difselcfg_set(struct stm32_dev_s *priv, uint32_t difselcfg)
+{
+
+  if (difselcfg > 0)
+    {
+      ainfo("Initializing difselcfg = 0x%08" PRIx32 "\n", difselcfg);
+
+      /* Write register */
+
+      adc_putreg(priv, STM32_ADC_DIFSEL_OFFSET, difselcfg);
     }
 
   return OK;
@@ -4365,6 +4412,20 @@ static void  adc_llops_jextcfg_set(struct stm32_adc_dev_s *dev,
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
 
   adc_jextcfg_set(priv, jextcfg);
+}
+#endif
+
+/****************************************************************************
+ * Name: adc_llops_difsel_set
+ ****************************************************************************/
+
+#ifdef ADC_HAVE_DIFSELCFG
+static void  adc_llops_difsel_set(struct stm32_adc_dev_s *dev,
+                                   uint32_t difselcfg)
+{
+  struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
+
+  adc_difselcfg_set(priv, difselcfg);
 }
 #endif
 

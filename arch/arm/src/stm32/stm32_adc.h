@@ -1984,6 +1984,21 @@
 #  define ADC_HAVE_JEXTCFG
 #endif
 
+/* DIFSEL configuration *****************************************************/
+
+#if defined(CONFIG_STM32_ADC_DIFSEL)
+#  if defined(CONFIG_STM32_ADC1_DIFSEL)
+#    define ADC1_HAVE_DIFSELCFG
+#  endif
+#  if defined(CONFIG_STM32_ADC2_DIFSEL)
+#    define ADC2_HAVE_DIFSELCFG
+#  endif
+#endif
+
+#if defined(ADC1_HAVE_DIFSELCFG) || defined(ADC2_HAVE_DIFSELCFG)
+#  define ADC_HAVE_DIFSELCFG
+#endif
+
 /* ADC interrupts ***********************************************************/
 
 #if defined(HAVE_IP_ADC_V1)
@@ -2238,6 +2253,12 @@ struct stm32_adc_ops_s
   /* Configure the ADC external trigger for injected conversion */
 
   void (*jextcfg_set)(struct stm32_adc_dev_s *dev, uint32_t jextcfg);
+#endif
+
+#ifdef ADC_HAVE_DIFSELCFG
+  /* Configure the ADC differential mode */
+
+  void (*difselcfg_set)(struct stm32_adc_dev_s *dev, uint32_t difselcfg);
 #endif
 
 #ifdef ADC_HAVE_INJECTED

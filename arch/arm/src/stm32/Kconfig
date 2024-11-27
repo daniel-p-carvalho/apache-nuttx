@@ -8824,6 +8824,30 @@ config STM32_ADC5_JEXTSEL
 	---help---
 		Enable JEXTSEL for ADC5.
 
+menuconfig STM32_ADC_DIFSEL
+	bool "ADC differential mode selection"
+	default n
+	---help---
+		Enable ADC differential mode selection support.
+
+if STM32_ADC_DIFSEL
+
+config STM32_ADC1_DIFSEL
+	bool "ADC1 differential mode selection"
+	depends on STM32_ADC1
+	default n
+	---help---
+		Enable differential mode selection for ADC1.
+
+config STM32_ADC2_DIFSEL
+	bool "ADC2 differential mode selection"
+	depends on STM32_ADC2
+	default n
+	---help---
+		Enable differential mode selection for ADC2.
+
+endif # STM32_ADC_DIFSEL
+
 endmenu
 
 menu "COMP Configuration"
