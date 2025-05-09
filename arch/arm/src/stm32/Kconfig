@@ -9258,6 +9258,12 @@ endmenu
 menu "DAC Configuration"
 	depends on STM32_DAC1 || STM32_DAC2 || STM32_DAC3 || STM32_DAC4
 
+config STM32_DAC_LL_OPS
+	bool "DAC low-level operations"
+	default n
+	---help---
+		Enable low-level DAC ops.
+
 config STM32_DAC1CH1_MODE
 	int "DAC1CH1 channel mode"
 	depends on STM32_DAC1CH1 && STM32_HAVE_IP_DAC_V2
