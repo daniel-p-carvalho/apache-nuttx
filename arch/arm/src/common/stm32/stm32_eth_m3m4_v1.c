@@ -652,8 +652,15 @@ static uint8_t g_alloc[STM32_ETH_NFREEBUFFERS *
 
 static struct stm32_ethmac_s g_stm32ethmac[STM32_NETHERNET];
 
-#ifdef CONFIG_STM32_ETH_PTP_RTC_HIRES
+/* Used to serialize access to the PTP hardware timer, both when it
+ * backs the system high-resolution RTC (CONFIG_STM32_ETH_PTP_RTC_HIRES)
+ * and when stm32_eth_ptp_convert_rxtime() samples it directly against
+ * CLOCK_REALTIME for CONFIG_STM32_ETH_TIMESTAMP_RX without RTC_HIRES.
+ */
+
 static spinlock_t g_rtc_lock = SP_UNLOCKED;
+
+#ifdef CONFIG_STM32_ETH_PTP_RTC_HIRES
 volatile bool g_rtc_enabled;
 static struct timespec g_stm32_eth_ptp_basetime;
 #endif
