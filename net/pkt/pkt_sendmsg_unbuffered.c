@@ -127,10 +127,9 @@ static uint32_t psock_send_eventhandler(FAR struct net_driver_s *dev,
               goto end_wait;
             }
 
-          dev->d_len                    = dev->d_sndlen;
-          pstate->snd_sent              = pstate->snd_buflen;
-          pstate->snd_conn->pendiob     = dev->d_iob;
-          pstate->snd_conn->pendiob_len = dev->d_sndlen;
+          dev->d_len                = dev->d_sndlen;
+          pstate->snd_sent          = pstate->snd_buflen;
+          pstate->snd_conn->pendiob = dev->d_iob;
 
           if (pstate->snd_sock->s_type == SOCK_DGRAM)
             {

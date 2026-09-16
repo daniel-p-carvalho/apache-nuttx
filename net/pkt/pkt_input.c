@@ -164,23 +164,13 @@ static int pkt_in(FAR struct net_driver_s *dev)
 
       if (conn->pendiob == dev->d_iob)
         {
-          /* The iob pool is small and recycled quickly, so a genuinely
-           * different received packet can end up reusing the exact
-           * iob slot our own last transmission used. Matching on the
-           * iob pointer alone would then drop that unrelated packet
-           * as a false positive. Require the length to also match
-           * what we sent, since a real self-echo is byte-for-byte
-           * the same frame we just transmitted.
+          /* Do not read back the packet sent by oneself.  pendiob is
+           * released by devif_poll_pkt_connections() once this tap run
+           * completes, so it is always a live reference here.
            */
 
-          if (conn->pendiob_len == dev->d_len)
-            {
-              /* Do not read back the packet sent by oneself */
-
-              conn->pendiob = NULL;
-              pkt_conn_list_unlock();
-              return OK;
-            }
+          pkt_conn_list_unlock();
+          return OK;
         }
 
 #if defined(CONFIG_NET_TIMESTAMP) && !defined(CONFIG_ARCH_HAVE_NETDEV_TIMESTAMP)
