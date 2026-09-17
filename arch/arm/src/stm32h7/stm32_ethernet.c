@@ -56,6 +56,10 @@
 #  include <nuttx/net/pkt.h>
 #endif
 
+#if defined(CONFIG_STM32_ETH_PTP) && defined(CONFIG_PTP_CLOCK)
+#  include <nuttx/timers/ptp_clock.h>
+#endif
+
 #include <nuttx/cache.h>
 #include "arm_internal.h"
 
@@ -253,7 +257,20 @@
 #endif
 
 #ifdef CONFIG_STM32_ETH_PTP
-#  warning "CONFIG_STM32_ETH_PTP is not yet supported"
+/* Sub-second increment value in nanoseconds:
+ * Aim for target PTP counter update frequency around HCLK / 2,
+ * which results in nominal ADDEND near 2^31 (0x80000000) for
+ * +/- 50% trim range.
+ */
+
+#define STM32_PTP_SUBSECOND_INC \
+  ((2 * NSEC_PER_SEC + STM32_HCLK_FREQUENCY / 2) / STM32_HCLK_FREQUENCY)
+
+/* Nominal ADDEND = (2^32 * (NSEC_PER_SEC / SSINC)) / STM32_HCLK_FREQUENCY */
+
+#define STM32_PTP_NOMINAL_ADDEND \
+  ((uint32_t)((((uint64_t)1 << 32) * NSEC_PER_SEC / \
+               STM32_PTP_SUBSECOND_INC) / STM32_HCLK_FREQUENCY))
 #endif
 
 #undef CONFIG_STM32_ETH_HWCHECKSUM
@@ -714,6 +731,10 @@ struct stm32_ethmac_s
   sq_queue_t           freeb;       /* The free buffer list */
 
   struct mdio_bus_s *mdio;
+
+#if defined(CONFIG_STM32_ETH_PTP) && defined(CONFIG_PTP_CLOCK)
+  struct ptp_lowerhalf_s ptp_lower; /* PTP hardware clock lower half */
+#endif
 };
 
 /****************************************************************************
@@ -840,6 +861,27 @@ static int  stm32_phyinit(struct stm32_ethmac_s *priv);
 #ifdef CONFIG_STM32_ETHMAC_REGDEBUG
 static void  stm32_phyregdump(struct stm32_ethmac_s *priv);
 #endif
+#endif
+
+/* PTP Functions */
+
+#ifdef CONFIG_STM32_ETH_PTP
+static int  stm32_eth_ptp_adjust(long ppb);
+static int  stm32_eth_ptp_adjphase(int64_t delta_ns);
+static void stm32_eth_ptp_init(void);
+
+#  ifdef CONFIG_PTP_CLOCK
+static int  stm32_ptp_adjfine(struct ptp_lowerhalf_s *lower, long ppb);
+static int  stm32_ptp_adjphase(struct ptp_lowerhalf_s *lower, int32_t phase);
+static int  stm32_ptp_adjtime(struct ptp_lowerhalf_s *lower, int64_t delta);
+static int  stm32_ptp_gettime(struct ptp_lowerhalf_s *lower,
+                              struct timespec *ts,
+                              struct ptp_system_timestamp *sts);
+static int  stm32_ptp_settime(struct ptp_lowerhalf_s *lower,
+                              const struct timespec *ts);
+static int  stm32_ptp_getres(struct ptp_lowerhalf_s *lower,
+                             struct timespec *res);
+#  endif
 #endif
 
 /* MAC/DMA Initialization */
@@ -1863,12 +1905,40 @@ static int stm32_recvframe(struct stm32_ethmac_s *priv)
                                       (uintptr_t)rxdesc +
                                       sizeof(struct eth_desc_s));
 
-                      /* Remember where we should re-start scanning and reset
-                       * the segment scanning logic
-                       */
-
                       priv->rxhead   = stm32_get_next_rxdesc(priv, rxdesc);
                       stm32_freesegment(priv, rxcurr, priv->segments);
+
+#ifdef CONFIG_STM32_ETH_TIMESTAMP_RX
+                      /* Check if hardware RX timestamp was captured */
+
+                      if ((rxdesc->des1 & ETH_RDES1_WB_TSA) != 0)
+                        {
+                          struct eth_desc_s *next_desc;
+
+                          next_desc = priv->rxhead;
+                          up_invalidate_dcache((uintptr_t)next_desc,
+                                               (uintptr_t)next_desc +
+                                               sizeof(struct eth_desc_s));
+
+                          if ((next_desc->des3 & ETH_RDES3_WB_OWN) == 0 &&
+                              (next_desc->des3 & ETH_RDES3_WB_CTXT) != 0)
+                            {
+                              priv->dev.d_rxtime.tv_sec  = next_desc->des1;
+                              priv->dev.d_rxtime.tv_nsec = next_desc->des0;
+
+                              /* Free the context descriptor back to DMA */
+
+                              stm32_freesegment(priv, next_desc, 1);
+                              priv->rxhead =
+                                stm32_get_next_rxdesc(priv, next_desc);
+                            }
+                        }
+                      else
+                        {
+                          priv->dev.d_rxtime.tv_sec  = 0;
+                          priv->dev.d_rxtime.tv_nsec = 0;
+                        }
+#endif
 
                       /* Force the completed RX DMA buffer to be re-read from
                        * physical memory.
@@ -3787,12 +3857,271 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
 #  endif
 #endif
 
-#ifdef CONFIG_STM32_ETH_PTP
+#ifdef CONFIG_STM32_ETH_PTP_GPIO
   /* Enable pulse-per-second (PPS) output signal */
 
   stm32_configgpio(GPIO_ETH_PPS_OUT);
 #endif
 }
+
+#ifdef CONFIG_STM32_ETH_PTP
+
+/****************************************************************************
+ * Name: stm32_eth_ptp_adjust
+ *
+ * Description:
+ *   Adjust the PTP hardware counter frequency by adjusting the ADDEND
+ *   register value.
+ *
+ * Input Parameters:
+ *   ppb - Rate adjustment in parts per billion
+ *
+ * Returned Value:
+ *   OK on success, negated errno on failure.
+ *
+ ****************************************************************************/
+
+static int stm32_eth_ptp_adjust(long ppb)
+{
+  uint32_t regval;
+  int64_t addend = STM32_PTP_NOMINAL_ADDEND;
+
+  /* Apply rate adjustment, if any */
+
+  if (ppb != 0)
+    {
+      addend += addend * (int64_t)ppb / NSEC_PER_SEC;
+    }
+
+  /* Check for overflows */
+
+  if (addend <= 0 || (uint64_t)addend > UINT32_MAX)
+    {
+      nerr("PTP adjustment out of range: ppb=%ld, addend=%lld\n",
+           ppb, (long long)addend);
+      return -EINVAL;
+    }
+
+  /* Perform addend register update */
+
+  stm32_putreg((uint32_t)addend, STM32_ETH_MACTSADDEND);
+  regval = stm32_getreg(STM32_ETH_MACTSCR);
+  stm32_putreg(regval | ETH_MACTSCR_TSADDREG, STM32_ETH_MACTSCR);
+  up_udelay(1);
+  if (stm32_getreg(STM32_ETH_MACTSCR) & ETH_MACTSCR_TSADDREG)
+    {
+      nerr("PTP addend update failed\n");
+      return -EBUSY;
+    }
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: stm32_eth_ptp_adjphase
+ *
+ * Description:
+ *   Adjust the PTP hardware counter phase by a signed offset in nanoseconds
+ *   via the System Time Update (TSUPDT) register.
+ *
+ * Input Parameters:
+ *   delta_ns - Amount to add (positive) or subtract (negative)
+ *
+ * Returned Value:
+ *   OK on success, negated errno on failure.
+ *
+ ****************************************************************************/
+
+static int stm32_eth_ptp_adjphase(int64_t delta_ns)
+{
+  uint32_t regval;
+  uint32_t sec;
+  uint32_t nsec;
+  uint64_t abs_ns;
+  bool negative;
+
+  negative = (delta_ns < 0);
+  abs_ns   = negative ? (uint64_t)(-delta_ns) : (uint64_t)delta_ns;
+
+  sec      = (uint32_t)(abs_ns / NSEC_PER_SEC);
+  nsec     = (uint32_t)(abs_ns % NSEC_PER_SEC);
+
+  stm32_putreg(sec, STM32_ETH_MACTSHUR);
+  stm32_putreg(nsec | (negative ? ETH_MACTSNUR_ADDSUB : 0),
+               STM32_ETH_MACTSNUR);
+
+  regval = stm32_getreg(STM32_ETH_MACTSCR);
+  stm32_putreg(regval | ETH_MACTSCR_TSUPDT, STM32_ETH_MACTSCR);
+  up_udelay(1);
+  if (stm32_getreg(STM32_ETH_MACTSCR) & ETH_MACTSCR_TSUPDT)
+    {
+      nerr("PTP phase update failed\n");
+      return -EBUSY;
+    }
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: stm32_eth_ptp_init
+ *
+ * Description:
+ *   Configure and start the PTP timestamp counter of the Ethernet MAC.
+ *
+ ****************************************************************************/
+
+static void stm32_eth_ptp_init(void)
+{
+  uint32_t regval;
+
+  /* 1. Configure Subsecond Increment register (SSINC shifted by 16) */
+
+  stm32_putreg(STM32_PTP_SUBSECOND_INC << ETH_MACSSIR_SSINC_SHIFT,
+               STM32_ETH_MACSSIR);
+
+  /* 2. Configure initial addend value for nominal frequency */
+
+  stm32_eth_ptp_adjust(0);
+
+  /* 3. Enable timestamp with fine update and digital rollover (1 ns) */
+
+  regval = ETH_MACTSCR_TSENA | ETH_MACTSCR_TSCFUPDT |
+           ETH_MACTSCR_TSCTRLSSR | ETH_MACTSCR_TSVER2ENA |
+           ETH_MACTSCR_TSIPENA | ETH_MACTSCR_TSIPV4ENA |
+           ETH_MACTSCR_TSIPV6ENA;
+
+#ifdef CONFIG_STM32_ETH_TIMESTAMP_RX
+  regval |= ETH_MACTSCR_TSENALL;
+#endif
+
+  stm32_putreg(regval, STM32_ETH_MACTSCR);
+
+  /* 4. Initialize system time counter to 0 */
+
+  stm32_putreg(0, STM32_ETH_MACTSHUR);
+  stm32_putreg(0, STM32_ETH_MACTSNUR);
+  stm32_putreg(regval | ETH_MACTSCR_TSINIT, STM32_ETH_MACTSCR);
+  up_udelay(1);
+
+  if (stm32_getreg(STM32_ETH_MACTSCR) & ETH_MACTSCR_TSINIT)
+    {
+      nerr("PTP timestamp initialization failed\n");
+    }
+}
+
+#ifdef CONFIG_PTP_CLOCK
+
+/****************************************************************************
+ * Name: stm32_ptp_adjfine
+ ****************************************************************************/
+
+static int stm32_ptp_adjfine(struct ptp_lowerhalf_s *lower, long ppb)
+{
+  return stm32_eth_ptp_adjust(ppb);
+}
+
+/****************************************************************************
+ * Name: stm32_ptp_adjphase
+ ****************************************************************************/
+
+static int stm32_ptp_adjphase(struct ptp_lowerhalf_s *lower, int32_t phase)
+{
+  return stm32_eth_ptp_adjphase((int64_t)phase);
+}
+
+/****************************************************************************
+ * Name: stm32_ptp_adjtime
+ ****************************************************************************/
+
+static int stm32_ptp_adjtime(struct ptp_lowerhalf_s *lower, int64_t delta)
+{
+  return stm32_eth_ptp_adjphase(delta);
+}
+
+/****************************************************************************
+ * Name: stm32_ptp_gettime
+ ****************************************************************************/
+
+static int stm32_ptp_gettime(struct ptp_lowerhalf_s *lower,
+                             struct timespec *ts,
+                             struct ptp_system_timestamp *sts)
+{
+  uint32_t sec1;
+  uint32_t nsec;
+  uint32_t sec2;
+
+  sec1 = stm32_getreg(STM32_ETH_MACTSSR);
+  nsec = stm32_getreg(STM32_ETH_MACTSNSR);
+  sec2 = stm32_getreg(STM32_ETH_MACTSSR);
+
+  if (sec1 != sec2)
+    {
+      /* Seconds rolled over while reading nanoseconds */
+
+      nsec = stm32_getreg(STM32_ETH_MACTSNSR);
+    }
+
+  ts->tv_sec  = sec2;
+  ts->tv_nsec = nsec & ETH_MACTSNSR_TSSS_MASK;
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: stm32_ptp_settime
+ ****************************************************************************/
+
+static int stm32_ptp_settime(struct ptp_lowerhalf_s *lower,
+                             const struct timespec *ts)
+{
+  uint32_t regval;
+
+  if (ts->tv_nsec < 0 || ts->tv_nsec >= NSEC_PER_SEC)
+    {
+      return -EINVAL;
+    }
+
+  stm32_putreg((uint32_t)ts->tv_sec, STM32_ETH_MACTSHUR);
+  stm32_putreg((uint32_t)ts->tv_nsec, STM32_ETH_MACTSNUR);
+
+  regval = stm32_getreg(STM32_ETH_MACTSCR);
+  stm32_putreg(regval | ETH_MACTSCR_TSINIT, STM32_ETH_MACTSCR);
+  up_udelay(1);
+
+  if (stm32_getreg(STM32_ETH_MACTSCR) & ETH_MACTSCR_TSINIT)
+    {
+      nerr("PTP timestamp initialize failed\n");
+      return -EBUSY;
+    }
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: stm32_ptp_getres
+ ****************************************************************************/
+
+static int stm32_ptp_getres(struct ptp_lowerhalf_s *lower,
+                            struct timespec *res)
+{
+  res->tv_sec  = 0;
+  res->tv_nsec = 1;
+  return OK;
+}
+
+static const struct ptp_ops_s g_stm32_ptp_ops =
+{
+  stm32_ptp_adjfine,  /* adjfine */
+  stm32_ptp_adjphase, /* adjphase */
+  stm32_ptp_adjtime,  /* adjtime */
+  stm32_ptp_gettime,  /* gettime */
+  NULL,               /* getcrosststamp */
+  stm32_ptp_settime,  /* settime */
+  stm32_ptp_getres,   /* getres */
+};
+
+#endif /* CONFIG_PTP_CLOCK */
+#endif /* CONFIG_STM32_ETH_PTP */
 
 /****************************************************************************
  * Function: stm32_ethreset
@@ -3975,6 +4304,13 @@ static int stm32_macconfig(struct stm32_ethmac_s *priv)
   /* Setup up the MACVTR register */
 
   stm32_putreg(0, STM32_ETH_MACVTR);
+
+#ifdef CONFIG_STM32_ETH_PTP
+  /* Initialize the PTP hardware clock */
+
+  stm32_eth_ptp_init();
+#endif
+
   return OK;
 }
 
@@ -4307,6 +4643,18 @@ static inline int stm32_ethinitialize(int intf)
   /* Register the device with the OS so that socket IOCTLs can be performed */
 
   netdev_register(&priv->dev, NET_LL_ETHERNET);
+
+#if defined(CONFIG_STM32_ETH_PTP) && defined(CONFIG_PTP_CLOCK)
+  /* Register PTP hardware clock driver (/dev/ptp0) */
+
+  priv->ptp_lower.ops = &g_stm32_ptp_ops;
+  ret = ptp_clock_register(&priv->ptp_lower, 500000000, priv->intf);
+  if (ret < 0)
+    {
+      nerr("ERROR: Failed to register PTP clock driver: %d\n", ret);
+    }
+#endif
+
   return ret;
 }
 
