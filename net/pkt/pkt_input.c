@@ -148,6 +148,41 @@ static int pkt_in(FAR struct net_driver_s *dev)
     {
       uint32_t flags;
 
+#ifdef CONFIG_NET_TIMESTAMP
+
+      /* A self-echoed frame tagged with io_conn was sent with
+       * SO_TIMESTAMPING set - it must reach the errahead delivery path
+       * below, not the plain self-echo suppression further down (which
+       * would otherwise silently discard it before SO_TIMESTAMPING ever
+       * gets a chance to deliver the TX timestamp via MSG_ERRQUEUE).
+       */
+
+      if (dev->d_iob->io_conn == &conn->sconn)
+        {
+          if (conn->pendiob == dev->d_iob &&
+              conn->pendiob_len == dev->d_len)
+            {
+              conn->pendiob = NULL;
+            }
+
+          if (pkt_datahandler(dev, conn, &conn->errahead) > 0)
+            {
+              pkt_callback(dev, conn, PKT_NEWDATA);
+            }
+
+          pkt_conn_list_unlock();
+          return OK;
+        }
+
+      if (dev->d_iob->io_conn != NULL)
+        {
+          /* Skip no related pkt conn */
+
+          pkt_conn_list_unlock();
+          return OK;
+        }
+#endif
+
       if (conn->pendiob == dev->d_iob)
         {
           /* The iob pool is small and recycled quickly, so a genuinely
@@ -168,30 +203,6 @@ static int pkt_in(FAR struct net_driver_s *dev)
               return OK;
             }
         }
-
-#ifdef CONFIG_NET_TIMESTAMP
-
-      /* Handle hardware timestamp */
-
-      if (dev->d_iob->io_conn == &conn->sconn)
-        {
-          if (pkt_datahandler(dev, conn, &conn->errahead) > 0)
-            {
-              pkt_callback(dev, conn, PKT_NEWDATA);
-            }
-
-          pkt_conn_list_unlock();
-          return OK;
-        }
-
-      if (dev->d_iob->io_conn != NULL)
-        {
-          /* Skip no related pkt conn */
-
-          pkt_conn_list_unlock();
-          return OK;
-        }
-#endif
 
 #ifdef CONFIG_NET_TIMESTAMP
       /* Storing reception timestamp provided by realtime
