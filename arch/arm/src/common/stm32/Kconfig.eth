@@ -156,6 +156,7 @@ endif # STM32_AUTONEG
 
 config STM32_ETH_PTP
 	bool "Precision Time Protocol (PTP)"
+	select PTP_CLOCK
 	---help---
 		Enables Precision Time Protocol (PTP) hardware timer.
 

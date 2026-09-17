@@ -164,8 +164,6 @@
 /* PTP Timestamping *********************************************************/
 
 #define SIOCG_TX_HW_TIMESTAMP _SIOC(0x0046) /* Get hardware TX timestamp */
-#define SIOCS_PTP_ADJFREQ     _SIOC(0x0047) /* Set PTP hardware frequency adjustment (ppb) */
-#define SIOCS_PTP_ADJPHASE    _SIOC(0x0048) /* Set PTP hardware phase adjustment (ns) */
 
 /****************************************************************************
  * Public Type Definitions
