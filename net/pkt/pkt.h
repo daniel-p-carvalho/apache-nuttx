@@ -104,6 +104,10 @@ struct pkt_conn_s
 
   struct iob_queue_s readahead;   /* Read-ahead buffering */
 
+#ifdef CONFIG_NET_TIMESTAMP
+  struct iob_queue_s errahead;    /* Error-ahead buffering */
+#endif
+
   FAR struct iob_s  *pendiob;     /* The iob currently being sent */
   uint16_t           pendiob_len; /* Length of pendiob, to disambiguate
                                     * a reused iob slot from a genuinely
