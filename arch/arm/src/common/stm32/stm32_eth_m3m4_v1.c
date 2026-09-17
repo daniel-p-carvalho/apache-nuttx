@@ -54,6 +54,10 @@
 #  include <nuttx/net/pkt.h>
 #endif
 
+#if defined(CONFIG_PTP_CLOCK)
+#  include <nuttx/timers/ptp_clock.h>
+#endif
+
 #include "arm_internal.h"
 #include "chip.h"
 #include "stm32_gpio.h"
@@ -630,6 +634,9 @@ struct stm32_ethmac_s
   uint32_t             rxtimelow;   /* Received packet timestamp subsecond */
   uint32_t             rxtimehigh;  /* Received packet timestamp seconds */
 #endif
+#if defined(CONFIG_STM32_ETH_PTP) && defined(CONFIG_PTP_CLOCK)
+  struct ptp_lowerhalf_s ptp_lower; /* PTP hardware clock lower half */
+#endif
 };
 
 /****************************************************************************
@@ -773,6 +780,7 @@ static int  stm32_ethconfig(struct stm32_ethmac_s *priv);
 
 #ifdef CONFIG_STM32_ETH_PTP
 static int stm32_eth_ptp_adjust(long ppb);
+static int stm32_eth_ptp_adjphase(int64_t delta_ns);
 static void stm32_eth_ptp_init(uint64_t timestamp);
 #ifdef CONFIG_STM32_ETH_PTP_RTC_HIRES
 static uint64_t stm32_eth_ptp_gettime(void);
@@ -3588,7 +3596,7 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
 static int stm32_eth_ptp_adjust(long ppb)
 {
   uint32_t regval;
-  uint64_t addend;
+  int64_t addend;
   uint32_t increment;
 
   /* Compute addend value to achieve nominal timer rate.
@@ -3603,15 +3611,15 @@ static int stm32_eth_ptp_adjust(long ppb)
 
   if (ppb != 0)
     {
-      addend += addend * ppb / NSEC_PER_SEC;
+      addend += addend * (int64_t)ppb / NSEC_PER_SEC;
     }
 
   /* Check for overflows */
 
-  if (addend == 0 || (uint32_t)addend != addend)
+  if (addend <= 0 || (uint64_t)addend > UINT32_MAX)
     {
       nerr("PTP adjustment out of range: ppb=%ld, addend=%lld\n",
-           ppb, addend);
+           ppb, (long long)addend);
       return -EINVAL;
     }
 
@@ -3626,6 +3634,64 @@ static int stm32_eth_ptp_adjust(long ppb)
       /* This can happen if Ethernet PHY clock is stopped */
 
       nerr("PTP addend update failed\n");
+      return -EBUSY;
+    }
+
+  return OK;
+}
+
+/****************************************************************************
+ * Function: stm32_eth_ptp_adjphase
+ *
+ * Description:
+ *   Nudge the PTP hardware counter's phase by a signed delta, in
+ *   nanoseconds, via the System Time Update (TSSTU) mechanism. Unlike
+ *   stm32_eth_ptp_init(), this does not reset the rate (addend) that
+ *   stm32_eth_ptp_adjust() may already have applied.
+ *
+ * Input Parameters:
+ *   delta_ns - Amount to add to (positive) or subtract from (negative)
+ *              the current counter value.
+ *
+ * Returned Value:
+ *   OK on success, negated errno on failure.
+ *
+ ****************************************************************************/
+
+static int stm32_eth_ptp_adjphase(int64_t delta_ns)
+{
+  uint32_t regval;
+  uint32_t sec;
+  uint32_t subsec;
+  uint32_t abs_nsec;
+  uint64_t abs_ns;
+  bool negative;
+
+  negative = (delta_ns < 0);
+  abs_ns   = negative ? (uint64_t)(-delta_ns) : (uint64_t)delta_ns;
+
+  sec      = (uint32_t)(abs_ns / NSEC_PER_SEC);
+  abs_nsec = (uint32_t)(abs_ns % NSEC_PER_SEC);
+
+  /* Convert the nanosecond remainder to the same 32-bit binary fraction
+   * of a second used by ptp_to_timespec()/stm32_eth_ptp_init(), then
+   * halve it to fit the 31-bit TSUSS field (mirrors the >>1 done in
+   * stm32_eth_ptp_init()).
+   */
+
+  subsec = (uint32_t)(((uint64_t)abs_nsec << 32) / NSEC_PER_SEC) >> 1;
+  subsec &= ETH_PTPTSLR_MASK;
+
+  stm32_putreg(sec, STM32_ETH_PTPTSHUR);
+  stm32_putreg(subsec | (negative ? ETH_PTPTSLU_TSUPNS : 0),
+               STM32_ETH_PTPTSLUR);
+
+  regval = stm32_getreg(STM32_ETH_PTPTSCR);
+  stm32_putreg(regval | ETH_PTPTSCR_TSSTU, STM32_ETH_PTPTSCR);
+  up_udelay(1);
+  if (stm32_getreg(STM32_ETH_PTPTSCR) & ETH_PTPTSCR_TSSTU)
+    {
+      nerr("PTP phase update failed\n");
       return -EBUSY;
     }
 
@@ -3708,6 +3774,188 @@ static void stm32_eth_ptp_init(uint64_t timestamp)
   stm32_putreg(regval, STM32_ETH_PTPTSCR);
 #endif
 }
+
+#if defined(CONFIG_STM32_ETH_PTP) && defined(CONFIG_PTP_CLOCK)
+/****************************************************************************
+ * Name: stm32_ptp_adjfine
+ *
+ * Description:
+ *   Adjust the PTP clock frequency in parts per billion (ppb).
+ *
+ * Input Parameters:
+ *   lower - Pointer to the PTP clock lower-half instance
+ *   ppb   - Frequency adjustment in parts per billion
+ *
+ * Returned Value:
+ *   OK on success, negated errno on failure.
+ *
+ ****************************************************************************/
+
+static int stm32_ptp_adjfine(struct ptp_lowerhalf_s *lower, long ppb)
+{
+  return stm32_eth_ptp_adjust(ppb);
+}
+
+/****************************************************************************
+ * Name: stm32_ptp_adjphase
+ *
+ * Description:
+ *   Adjust the PTP clock phase by a signed offset in nanoseconds.
+ *
+ * Input Parameters:
+ *   lower - Pointer to the PTP clock lower-half instance
+ *   phase - Phase adjustment in nanoseconds
+ *
+ * Returned Value:
+ *   OK on success, negated errno on failure.
+ *
+ ****************************************************************************/
+
+static int stm32_ptp_adjphase(struct ptp_lowerhalf_s *lower, int32_t phase)
+{
+  return stm32_eth_ptp_adjphase((int64_t)phase);
+}
+
+/****************************************************************************
+ * Name: stm32_ptp_adjtime
+ *
+ * Description:
+ *   Shift the PTP clock time by a signed delta in nanoseconds.
+ *
+ * Input Parameters:
+ *   lower - Pointer to the PTP clock lower-half instance
+ *   delta - Time delta in nanoseconds
+ *
+ * Returned Value:
+ *   OK on success, negated errno on failure.
+ *
+ ****************************************************************************/
+
+static int stm32_ptp_adjtime(struct ptp_lowerhalf_s *lower, int64_t delta)
+{
+  return stm32_eth_ptp_adjphase(delta);
+}
+
+/****************************************************************************
+ * Name: stm32_ptp_gettime
+ *
+ * Description:
+ *   Read the current time from the PTP hardware clock.
+ *
+ * Input Parameters:
+ *   lower - Pointer to the PTP clock lower-half instance
+ *   ts    - Location to store the current PTP time
+ *   sts   - System timestamp pair (unused, can be NULL)
+ *
+ * Returned Value:
+ *   OK on success, negated errno on failure.
+ *
+ ****************************************************************************/
+
+static int stm32_ptp_gettime(struct ptp_lowerhalf_s *lower,
+                             struct timespec *ts,
+                             struct ptp_system_timestamp *sts)
+{
+  uint32_t high1;
+  uint32_t low;
+  uint32_t high2;
+  uint32_t subsec;
+
+  high1 = getreg32(STM32_ETH_PTPTSHR);
+  low   = getreg32(STM32_ETH_PTPTSLR);
+  high2 = getreg32(STM32_ETH_PTPTSHR);
+
+  if (high1 != high2)
+    {
+      low = getreg32(STM32_ETH_PTPTSLR);
+    }
+
+  ts->tv_sec = high2;
+  subsec = (low & ETH_PTPTSLR_MASK) << 1;
+  ts->tv_nsec = (long)(((uint64_t)subsec * NSEC_PER_SEC) >> 32);
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: stm32_ptp_settime
+ *
+ * Description:
+ *   Set the current time on the PTP hardware clock.
+ *
+ * Input Parameters:
+ *   lower - Pointer to the PTP clock lower-half instance
+ *   ts    - Time value to set
+ *
+ * Returned Value:
+ *   OK on success, negated errno on failure.
+ *
+ ****************************************************************************/
+
+static int stm32_ptp_settime(struct ptp_lowerhalf_s *lower,
+                             const struct timespec *ts)
+{
+  uint32_t regval;
+  uint32_t subsec;
+
+  if (ts->tv_nsec < 0 || ts->tv_nsec >= NSEC_PER_SEC)
+    {
+      return -EINVAL;
+    }
+
+  subsec = (uint32_t)(((uint64_t)ts->tv_nsec << 32) / NSEC_PER_SEC) >> 1;
+  subsec &= ETH_PTPTSLR_MASK;
+
+  stm32_putreg((uint32_t)ts->tv_sec, STM32_ETH_PTPTSHUR);
+  stm32_putreg(subsec, STM32_ETH_PTPTSLUR);
+
+  regval = stm32_getreg(STM32_ETH_PTPTSCR);
+  stm32_putreg(regval | ETH_PTPTSCR_TSSTI, STM32_ETH_PTPTSCR);
+  up_udelay(1);
+
+  if (stm32_getreg(STM32_ETH_PTPTSCR) & ETH_PTPTSCR_TSSTI)
+    {
+      nerr("PTP timestamp update failed\n");
+      return -EBUSY;
+    }
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: stm32_ptp_getres
+ *
+ * Description:
+ *   Get the resolution of the PTP hardware clock (1 ns).
+ *
+ * Input Parameters:
+ *   lower - Pointer to the PTP clock lower-half instance
+ *   res   - Location to store the resolution
+ *
+ * Returned Value:
+ *   OK on success.
+ *
+ ****************************************************************************/
+
+static int stm32_ptp_getres(struct ptp_lowerhalf_s *lower,
+                            struct timespec *res)
+{
+  res->tv_sec  = 0;
+  res->tv_nsec = 1;
+  return OK;
+}
+
+static const struct ptp_ops_s g_stm32_ptp_ops =
+{
+  stm32_ptp_adjfine,  /* adjfine */
+  stm32_ptp_adjphase, /* adjphase */
+  stm32_ptp_adjtime,  /* adjtime */
+  stm32_ptp_gettime,  /* gettime */
+  NULL,               /* getcrosststamp */
+  stm32_ptp_settime,  /* settime */
+  stm32_ptp_getres,   /* getres */
+};
+#endif
 
 #ifdef CONFIG_STM32_ETH_PTP_RTC_HIRES
 /****************************************************************************
@@ -4242,6 +4490,18 @@ int stm32_ethinitialize(int intf)
   /* Register the device with the OS so that socket IOCTLs can be performed */
 
   netdev_register(&priv->dev, NET_LL_ETHERNET);
+
+#if defined(CONFIG_STM32_ETH_PTP) && defined(CONFIG_PTP_CLOCK)
+  /* Register the PTP clock character driver (/dev/ptp0) */
+
+  priv->ptp_lower.ops = &g_stm32_ptp_ops;
+  ret = ptp_clock_register(&priv->ptp_lower, 500000000, intf);
+  if (ret < 0)
+    {
+      nerr("ERROR: Failed to register PTP clock: %d\n", ret);
+    }
+#endif
+
   return OK;
 }
 
