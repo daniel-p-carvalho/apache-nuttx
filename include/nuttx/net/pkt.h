@@ -70,4 +70,40 @@
 struct net_driver_s; /* Forward reference */
 int pkt_input(FAR struct net_driver_s *dev);
 
+#ifdef CONFIG_NET_TIMESTAMP
+
+/****************************************************************************
+ * Name: pkt_tx_timestamp_complete
+ *
+ * Description:
+ *   Deliver a TX timestamp for a completed transmission directly, without
+ *   requiring the frame to loop back through the receive path first (the
+ *   only delivery path SO_TIMESTAMPING has out of the box). Drivers that
+ *   know when a transmission with a timestamp request completes (e.g. from
+ *   a TX-complete interrupt) call this instead, passing the timestamp to
+ *   record and the socket connection that requested it.
+ *
+ * Input Parameters:
+ *   dev  - The device driver structure for the interface the frame was
+ *          sent on
+ *   conn - The socket connection that requested the timestamp (read back
+ *          from the transmitted iob's io_conn field by the driver)
+ *   ts   - The TX-complete timestamp to deliver
+ *
+ * Returned Value:
+ *   OK on success; a negated errno value on failure.
+ *
+ * Assumptions:
+ *   Called from the network driver with the network locked.
+ *
+ ****************************************************************************/
+
+struct socket_conn_s;  /* Forward reference */
+struct timespec;       /* Forward reference */
+int pkt_tx_timestamp_complete(FAR struct net_driver_s *dev,
+                              FAR struct socket_conn_s *conn,
+                              FAR const struct timespec *ts);
+
+#endif /* CONFIG_NET_TIMESTAMP */
+
 #endif /* __INCLUDE_NUTTX_NET_PKT_H */

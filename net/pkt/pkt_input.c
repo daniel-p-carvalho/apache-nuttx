@@ -257,6 +257,59 @@ static int pkt_in(FAR struct net_driver_s *dev)
  *
  ****************************************************************************/
 
+#ifdef CONFIG_NET_TIMESTAMP
+
+/****************************************************************************
+ * Name: pkt_tx_timestamp_complete
+ *
+ * Description:
+ *   See include/nuttx/net/pkt.h. Builds a minimal iob carrying only the
+ *   timestamp (the driver has already freed the real transmitted buffer
+ *   by the time this runs) and delivers it via the same errahead/
+ *   MSG_ERRQUEUE path pkt_in() uses for a self-echoed frame, without
+ *   requiring the frame to have looped back through RX.
+ *
+ ****************************************************************************/
+
+int pkt_tx_timestamp_complete(FAR struct net_driver_s *dev,
+                              FAR struct socket_conn_s *conn_sconn,
+                              FAR const struct timespec *ts)
+{
+  FAR struct pkt_conn_s *conn = (FAR struct pkt_conn_s *)conn_sconn;
+  FAR struct iob_s *iob;
+  static const uint8_t placeholder[60];
+
+  if (conn_sconn == NULL || ts == NULL)
+    {
+      return -EINVAL;
+    }
+
+  iob = iob_tryalloc(true);
+  if (iob == NULL)
+    {
+      return -ENOMEM;
+    }
+
+  iob_copyin(iob, placeholder, sizeof(placeholder), 0, true);
+  iob->io_time = *ts;
+
+  pkt_conn_list_lock();
+
+  if (iob_tryadd_queue(iob, &conn->errahead) < 0)
+    {
+      pkt_conn_list_unlock();
+      iob_free_chain(iob);
+      return -ENOSPC;
+    }
+
+  pkt_callback(dev, conn, PKT_NEWDATA);
+  pkt_conn_list_unlock();
+
+  return OK;
+}
+
+#endif /* CONFIG_NET_TIMESTAMP */
+
 int pkt_input(FAR struct net_driver_s *dev)
 {
   FAR uint8_t *buf;

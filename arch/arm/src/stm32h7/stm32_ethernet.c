@@ -50,6 +50,7 @@
 #include <nuttx/net/mii.h>
 #include <nuttx/net/ip.h>
 #include <nuttx/net/netdev.h>
+#include <nuttx/net/pkt.h>
 #include <nuttx/crc64.h>
 
 #if defined(CONFIG_NET_PKT)
@@ -713,6 +714,18 @@ struct stm32_ethmac_s
   uint16_t             inflight;    /* Number of TX transfers "in_flight" */
   sq_queue_t           freeb;       /* The free buffer list */
 
+#ifdef CONFIG_NET_TIMESTAMP
+  /* SO_TIMESTAMPING TX delivery: this driver copies packet data into a
+   * flat DMA buffer instead of retaining the submitted iob, so the
+   * connection requesting a TX timestamp (if any) is tracked here as a
+   * single pending slot instead of per-descriptor - matching the
+   * synchronous send-then-query usage pattern PKT sockets exercise
+   * today (one TX timestamp request in flight at a time).
+   */
+
+  FAR struct socket_conn_s *tx_pending_conn;
+#endif
+
   struct mdio_bus_s *mdio;
 };
 
@@ -1186,6 +1199,13 @@ static int stm32_transmit(struct stm32_ethmac_s *priv)
 
   txdesc  = priv->txhead;
   txfirst = txdesc;
+
+#ifdef CONFIG_NET_TIMESTAMP
+  if (priv->dev.d_iob != NULL && priv->dev.d_iob->io_conn != NULL)
+    {
+      priv->tx_pending_conn = priv->dev.d_iob->io_conn;
+    }
+#endif
 
   ninfo("d_len: %d d_buf: %p txhead: %p tdes3: %08" PRIx32 "\n",
         priv->dev.d_len, priv->dev.d_buf, txdesc, txdesc->des3);
@@ -2182,6 +2202,18 @@ static void stm32_freeframe(struct stm32_ethmac_s *priv)
 
           if ((des3_tmp & ETH_TDES3_RD_LD) != 0)
             {
+#ifdef CONFIG_NET_TIMESTAMP
+              if (priv->tx_pending_conn != NULL)
+                {
+                  struct timespec ts;
+
+                  clock_gettime(CLOCK_REALTIME, &ts);
+                  pkt_tx_timestamp_complete(&priv->dev,
+                                            priv->tx_pending_conn, &ts);
+                  priv->tx_pending_conn = NULL;
+                }
+#endif
+
               /* Yes.. Decrement the number of frames "in-flight". */
 
               priv->inflight--;
