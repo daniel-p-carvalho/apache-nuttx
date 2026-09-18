@@ -132,6 +132,10 @@ static uint32_t psock_send_eventhandler(FAR struct net_driver_s *dev,
           pstate->snd_conn->pendiob = dev->d_iob;
 
 #ifdef CONFIG_NET_TIMESTAMP
+          _alert("send_eventhandler: options=%lx tsopt=%lx\n",
+                 pstate->snd_conn->sconn.s_options,
+                 _SO_GETOPT(pstate->snd_conn->sconn.s_options,
+                            SO_TIMESTAMPING));
           if (_SO_GETOPT(pstate->snd_conn->sconn.s_options,
                          SO_TIMESTAMPING))
             {
@@ -263,6 +267,8 @@ ssize_t pkt_sendmsg(FAR struct socket *psock, FAR const struct msghdr *msg,
           pkt_callback_free(dev, conn, state.snd_cb);
         }
     }
+
+  conn->pendiob = NULL;
 
   nxsem_destroy(&state.snd_sem);
   conn_dev_unlock(&conn->sconn, dev);

@@ -163,11 +163,22 @@ static int pkt_in(FAR struct net_driver_s *dev)
 
       /* Handle hardware timestamp */
 
+      if (dev->d_iob != NULL && dev->d_iob->io_conn != NULL)
+        {
+          _alert("pkt_in HWTS: sconn=%p io_conn=%p\n",
+                 &conn->sconn, dev->d_iob->io_conn);
+        }
+
       if (dev->d_iob->io_conn == &conn->sconn)
         {
           if (pkt_datahandler(dev, conn, &conn->errahead) > 0)
             {
+              _alert("pkt_in HWTS queued to errahead!\n");
               pkt_callback(dev, conn, PKT_NEWDATA);
+            }
+          else
+            {
+              _alert("pkt_in HWTS datahandler failed!\n");
             }
 
           pkt_conn_list_unlock();
@@ -228,6 +239,14 @@ static int pkt_in(FAR struct net_driver_s *dev)
     }
   else
     {
+#ifdef CONFIG_NET_TIMESTAMP
+      if (dev->d_iob != NULL && dev->d_iob->io_conn != NULL)
+        {
+          _alert("pkt_in HWTS: conn NULL! d_buf=%p d_len=%d\n",
+                 dev->d_buf, dev->d_len);
+        }
+#endif
+
       ninfo("No PKT listener\n");
     }
 

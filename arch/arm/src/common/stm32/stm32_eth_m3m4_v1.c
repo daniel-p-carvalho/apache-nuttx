@@ -416,7 +416,7 @@
  */
 
 #ifdef CONFIG_NET_PROMISCUOUS
-#  define MACFFR_SET_BITS (ETH_MACFFR_PCF_PAUSE | ETH_MACFFR_PM)
+#  define MACFFR_SET_BITS (ETH_MACFFR_PCF_ALL | ETH_MACFFR_PM)
 #else
 #  define MACFFR_SET_BITS (ETH_MACFFR_PCF_PAUSE)
 #endif
@@ -805,6 +805,14 @@ static void stm32_eth_ptp_convert_rxtime(struct stm32_ethmac_s *priv);
  * Private Functions
  ****************************************************************************/
 
+#ifdef CONFIG_STM32_ETH_PTP
+static inline void ptp_to_timespec(uint64_t timestamp, struct timespec *ts)
+{
+  ts->tv_sec = (timestamp >> 32);
+  ts->tv_nsec = ((uint32_t)timestamp * (uint64_t)NSEC_PER_SEC) >> 32;
+}
+#endif
+
 /****************************************************************************
  * Name: stm32_getreg
  *
@@ -1174,6 +1182,9 @@ static int stm32_transmit(struct stm32_ethmac_s *priv)
         uint32_t txindex = txdesc - g_txtable;
 
         priv->tx_meta[txindex] = NULL;
+        _alert("stm32_transmit: d_iob=%p io_conn=%p\n",
+               priv->dev.d_iob,
+               priv->dev.d_iob ? priv->dev.d_iob->io_conn : NULL);
         if (priv->dev.d_iob != NULL && priv->dev.d_iob->io_conn != NULL)
           {
             FAR struct iob_s *clone = netdev_iob_clone(&priv->dev, false);
@@ -1183,6 +1194,12 @@ static int stm32_transmit(struct stm32_ethmac_s *priv)
                 clone->io_conn = priv->dev.d_iob->io_conn;
                 priv->tx_meta[txindex] = clone;
                 txdesc->tdes0 |= ETH_TDES0_TTSE;
+                _alert("TX HWTS armed: desc=%p idx=%" PRIu32 "\n",
+                       txdesc, txindex);
+              }
+            else
+              {
+                _alert("TX HWTS: clone failed!\n");
               }
           }
       }
@@ -1755,6 +1772,8 @@ static void stm32_tx_tstamp_flush(struct stm32_ethmac_s *priv)
 
       if (iob != NULL)
         {
+          _alert("TX HWTS flush: iob=%p pktlen=%u io_conn=%p\n",
+                 iob, iob->io_pktlen, iob->io_conn);
           dev->d_iob = iob;
           dev->d_len = iob->io_pktlen;
 #ifdef CONFIG_NET_PKT
@@ -1762,6 +1781,8 @@ static void stm32_tx_tstamp_flush(struct stm32_ethmac_s *priv)
 #endif
           dev->d_iob = NULL;
           dev->d_len = 0;
+          iob->io_conn = NULL;
+          iob_free_chain(iob);
         }
     }
 }
@@ -1906,7 +1927,16 @@ static void stm32_receive(struct stm32_ethmac_s *priv)
       else
 #endif
         {
-          nerr("ERROR: Dropped, Unknown type: %04x\n", BUF->type);
+#ifdef CONFIG_NET_PKT
+          /* Non-IP frames like PTP (0x88f7) were already delivered to
+           * packet sockets via pkt_input() above.
+           */
+
+          if (BUF->type != HTONS(0x88f7) && BUF->type != HTONS(ETHTYPE_IP6))
+#endif
+            {
+              nerr("ERROR: Dropped, Unknown type: %04x\n", BUF->type);
+            }
         }
 
       /* We are finished with the RX buffer.  NOTE:  If the buffer is
@@ -1992,6 +2022,11 @@ static void stm32_freeframe(struct stm32_ethmac_s *priv)
               priv->tx_meta[tail] = NULL;
               if (clone != NULL)
                 {
+                  _alert("TX HWTS freeframe: idx=%" PRIu32
+                         " tdes0=%08lx TTSS=%d\n",
+                         tail, (unsigned long)txdesc->tdes0,
+                         (txdesc->tdes0 & ETH_TDES0_TTSS) != 0);
+
                   if ((txdesc->tdes0 & ETH_TDES0_TTSS) != 0)
                     {
                       uint64_t hw_time = ((uint64_t)txdesc->tdes7 << 32)
@@ -4125,12 +4160,6 @@ static uint64_t stm32_eth_ptp_gettime(void)
     }
 }
 #endif
-
-static inline void ptp_to_timespec(uint64_t timestamp, struct timespec *ts)
-{
-  ts->tv_sec = (timestamp >> 32);
-  ts->tv_nsec = ((uint32_t)timestamp * (uint64_t)NSEC_PER_SEC) >> 32;
-}
 
 /* Convert RX timestamp to CLOCK_REALTIME */
 #ifdef CONFIG_STM32_ETH_TIMESTAMP_RX

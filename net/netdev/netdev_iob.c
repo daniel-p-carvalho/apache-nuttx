@@ -79,6 +79,8 @@ int netdev_iob_prepare(FAR struct net_driver_s *dev, bool throttled,
 
   iob_reserve(dev->d_iob, CONFIG_NET_LL_GUARDSIZE);
 
+  dev->d_iob->io_conn = NULL;
+
   /* Set the device buffer to l2 */
 
   dev->d_buf = NETLLBUF;
@@ -101,6 +103,7 @@ int netdev_iob_prepare(FAR struct net_driver_s *dev, bool throttled,
 void netdev_iob_prepare_dynamic(FAR struct net_driver_s *dev, uint16_t size)
 {
   FAR struct iob_s *iob;
+
   size += CONFIG_NET_LL_GUARDSIZE;
 
   if (dev->d_iob && size <= IOB_BUFSIZE(dev->d_iob))
