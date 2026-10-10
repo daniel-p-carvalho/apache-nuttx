@@ -1,8 +1,9 @@
 # EV49N51A – imagem do produto (bridge Ethernet ⇄ Wi-Fi): modo Ethernet 10 Mbps
 
-Este manual é para quem vai **testar** a imagem do produto com o IED. Ele
-explica o workaround de Ethernet, como verificar e controlar o modo de
-conexão e quais testes executar. Vale só para o branch
+Base do branch: `upstream/master` de 2026-10-10 (inclui o Wi-Fi e o WPA3 do
+upstream). Este manual é para quem vai **testar** a imagem do produto com o
+IED. Ele explica o workaround de Ethernet, como verificar e controlar o modo
+de conexão e quais testes executar. Vale só para o branch
 `feat/ev49n51a-bridge-product` do fork; não faz parte do upstream do NuttX.
 
 ## 1. Resumo
@@ -25,7 +26,8 @@ conexão e quais testes executar. Vale só para o branch
 1. `eth0` recebe o MAC localmente administrado `02:e0:de:ad:be:ef` (o W1 não
    tem MAC de fábrica) e sobe sem endereço.
 2. `wlan0` vira SoftAP WPA2-PSK: SSID `NuttX-BR`, senha `nuttxbridge`,
-   canal 6.
+   canal 6. Com `EV49N51A_BRIDGE_WPA3=y` (opcional, ver 3.1) o SoftAP é
+   WPA3-Personal.
 3. `br0` é criada com `eth0` e `wlan0` como portas e recebe `10.0.0.2/24`.
    Só `br0` tem endereço.
 4. **A placa não roda servidor DHCP** (`EV49N51A_BRIDGE_DHCPD=n`). O
@@ -35,10 +37,12 @@ conexão e quais testes executar. Vale só para o branch
    deve ficar **fora da faixa de leases do IED**.
 
 Os valores vêm das opções `EV49N51A_BRIDGE_SSID`, `_PSK`, `_CHANNEL`,
-`_IPADDR` e `_DHCPD` (Kconfig da placa). O servidor da placa continua
-compilado (`dhcpd_start br0` / `dhcpd_stop` no NSH) para uso de bancada
-quando **não** há outro servidor na rede; nunca deixe dois servidores
-ativos ao mesmo tempo.
+`_IPADDR`, `_DHCPD` e `_WPA3` (Kconfig da placa). O servidor da placa
+continua compilado (`dhcpd_start br0` / `dhcpd_stop` no NSH) para uso de
+bancada quando **não** há outro servidor na rede; nunca deixe dois
+servidores ativos ao mesmo tempo. Atenção: na bancada, `dhcpd_start` mudou o
+endereço de `br0` para `10.0.0.1`; confira com `ifconfig br0` depois de
+iniciá-lo. `dhcpd_stop` (e não `kill`) é o jeito de pará-lo.
 
 ## 3. Compilar e gravar
 
@@ -50,7 +54,14 @@ export PATH=/opt/microchip/xc32/v6.00/bin:<pasta do genromfs>:$PATH
 make -j$(nproc)
 ```
 
-O resultado é `nuttx.hex`. Gravação com o PICkit 3 (leva ~2 min):
+O resultado é `nuttx.hex`. Se você mudar uma opção que afeta o `rcS`
+(`EV49N51A_BRIDGE_DHCPD`, `_WPA3`, SSID, senha, canal, endereço), rode
+`touch boards/mips/pic32mz/ev49n51a/src/etc/init.d/rcS` antes do `make`: o
+`/etc` embutido só é regenerado quando o próprio `rcS` muda, não quando o
+`.config` muda. O primeiro build precisa de rede (baixa a biblioteca Wi-Fi,
+ver 3.1).
+
+Gravação com o PICkit 3 (leva ~2 min):
 
 ```sh
 cd /opt/microchip/mplabx/v6.20/mplab_platform/mplab_ipe
