@@ -46,6 +46,84 @@ iniciá-lo. `dhcpd_stop` (e não `kill`) é o jeito de pará-lo.
 
 ## 3. Compilar e gravar
 
+### Passo a passo: do zero até a placa no ar
+
+Gera a **imagem do produto**: Ethernet limitada a 10 Mbps (o workaround) e
+**sem** servidor DHCP na placa. Não mude nenhuma opção: a configuração
+`ev49n51a:bridge` já sai assim. Os detalhes de cada passo estão nas seções
+3.0, 3.0.1 e 3.1 e no Anexo 9.
+
+1. **Instale as ferramentas** (uma vez): MPLAB X v6.20, XC32 v6.00, o DFP e a
+   regra udev do PICkit 3 (Anexo 9). Confira:
+
+   ```sh
+   /opt/microchip/xc32/v6.00/bin/xc32-gcc --version     # XC32 v6.00
+   ls ~/microchip/WFI32-W_DFP/Microchip.PIC32MZ-W_DFP.pdsc
+   which genromfs kconfig-tweak make
+   ```
+
+2. **Baixe o NuttX e o apps lado a lado** (o `apps` com o `brctl`, ver 3.0):
+
+   ```sh
+   mkdir nuttx-ws && cd nuttx-ws
+   git clone -b feat/ev49n51a-bridge-product https://github.com/daniel-p-carvalho/apache-nuttx.git nuttx
+   git clone https://github.com/apache/nuttx-apps.git apps
+   cd apps
+   git fetch https://github.com/apache/nuttx-apps pull/3819/head
+   git cherry-pick FETCH_HEAD     # precisa de user.name/user.email no git
+   ls system/brctl/Kconfig        # tem que existir
+   cd ../nuttx
+   ```
+
+3. **Configure e compile** (o primeiro build baixa a biblioteca Wi-Fi: precisa
+   de rede):
+
+   ```sh
+   export PATH=/opt/microchip/xc32/v6.00/bin:<pasta do genromfs>:$PATH
+   ./tools/configure.sh -E -l ev49n51a:bridge
+   grep -E 'SYSTEM_BRCTL=|PHY_10MBPS_ONLY=|BRIDGE_DHCPD' .config
+   make -j$(nproc)
+   ```
+
+   O `grep` tem que mostrar `CONFIG_SYSTEM_BRCTL=y`,
+   `CONFIG_PIC32MZ_PHY_10MBPS_ONLY=y` e
+   `# CONFIG_EV49N51A_BRIDGE_DHCPD is not set`. Se não, pare (ver 3.0). O
+   resultado é `nuttx.hex`.
+
+4. **Grave** (PICkit 3 no ICSP da placa, ~2,5 min; termina com
+   `Operation Succeeded`):
+
+   ```sh
+   cd /opt/microchip/mplabx/v6.20/mplab_platform/mplab_ipe
+   ./ipecmd.sh -P32MZ1025W104132 -TPPK3 -M -F<caminho>/nuttx.hex -Y -OL
+   ```
+
+5. **Console** na UART de debug (X5, 115200 8N1) e **reset** sem regravar
+   (~11 s):
+
+   ```sh
+   ./ipecmd.sh -P32MZ1025W104132 -TPPK3 -OK -OL
+   ```
+
+   No boot aparecem `wlan: starting AP NuttX-BR on channel 6`,
+   `wlan: AP started` e o prompt `nsh>`.
+
+6. **Confira a imagem** no console:
+
+   ```
+   nsh> ifconfig      # eth0, wlan0 e br0 RUNNING; br0 = 10.0.0.2
+   nsh> ps            # não pode haver nenhuma linha dhcpd
+   ```
+
+   Do PC (interface em `10.0.0.1/24`, cabo na `eth0`): `ping -c 100 10.0.0.2`
+   deve dar 0% de perda, com RTT de ~0,7 a 1 ms. A partir daqui, siga os
+   testes da seção 5.
+
+Para as variantes (WPA3 em 3.1, 100 Mbps em 4.1, diagnóstico em 4.3), sempre
+recomece com `./tools/configure.sh -E -l ev49n51a:bridge`: o `-E` descarta o
+`.config` anterior. Sem ele o `configure.sh` responde
+`No configuration change` e mantém as opções da variante anterior.
+
 ### 3.0 Antes de tudo: o `nuttx-apps` precisa do `brctl`
 
 O script de boot (`rcS`) cria a bridge com o comando `brctl`
@@ -59,6 +137,11 @@ está no pull request
 * o build termina normalmente, mas a placa sobe **sem `br0`**: no console
   aparece `nsh: brctl: command not found` e `ifconfig` só mostra `eth0` e
   `wlan0`. O mesmo acontece, por exemplo, ao normalizar o defconfig.
+
+O `brctl` também depende de `CONFIG_NET_BRIDGE` no próprio `nuttx`
+([apache/nuttx#20519](https://github.com/apache/nuttx/pull/20519)). A *branch*
+do produto já o inclui; com outra base de `nuttx`, o `grep` da verificação
+abaixo falha mesmo com o `apps` correto.
 
 O diretório `apps` deve ficar ao lado do `nuttx` (`../apps`) e estar no
 *branch* do `brctl`. Escolha **uma** das formas:
@@ -86,12 +169,16 @@ Confira antes de compilar:
 ```sh
 ls ../apps/system/brctl/Kconfig          # tem que existir
 cd ../nuttx
-./tools/configure.sh -l ev49n51a:bridge
+./tools/configure.sh -E -l ev49n51a:bridge
 grep CONFIG_SYSTEM_BRCTL .config         # tem que mostrar =y
 ```
 
 Se o `grep` não mostrar `CONFIG_SYSTEM_BRCTL=y`, o `apps` está sem o
-`brctl`: não compile, volte ao passo acima. Quando a PR #3819 for aceita,
+`brctl`: não compile, volte ao passo acima. Depois de corrigir o `apps`, repita com
+`./tools/configure.sh -E -l ev49n51a:bridge` (ou `make distclean` antes): sem
+o `-E` ele responde `No configuration change` e mantém o `.config` antigo,
+ainda sem o `brctl` (e o *build* misturado pode falhar no *link* com
+`undefined reference to romfs_img`). Quando a PR #3819 for aceita,
 volte o `apps` para o `master` (`git checkout master && git pull`) e esta
 etapa deixa de ser necessária.
 
@@ -101,7 +188,7 @@ Precisa do XC32 v6.00 e do `genromfs` no `PATH`:
 
 ```sh
 export PATH=/opt/microchip/xc32/v6.00/bin:<pasta do genromfs>:$PATH
-./tools/configure.sh -l ev49n51a:bridge
+./tools/configure.sh -E -l ev49n51a:bridge
 make -j$(nproc)
 ```
 
@@ -147,7 +234,7 @@ de criptografia BA414E, portanto **não há microcódigo nem download extra**.
 exigir SAE; clientes só WPA2 não conseguem associar. Para habilitar:
 
 ```sh
-./tools/configure.sh -l ev49n51a:bridge
+./tools/configure.sh -E -l ev49n51a:bridge
 kconfig-tweak --enable PIC32MZ_W1_BA414E --enable EV49N51A_BRIDGE_WPA3
 make olddefconfig
 touch boards/mips/pic32mz/ev49n51a/src/etc/init.d/rcS
@@ -180,7 +267,7 @@ make -j$(nproc)
 Para gerar a mesma imagem com 100 Mbps habilitado (testes comparativos):
 
 ```sh
-./tools/configure.sh -l ev49n51a:bridge
+./tools/configure.sh -E -l ev49n51a:bridge
 kconfig-tweak --disable PIC32MZ_PHY_10MBPS_ONLY
 make olddefconfig
 make -j$(nproc)
@@ -232,7 +319,7 @@ Para bancada, compile a configuração do produto com os comandos de memória e
 MDIO:
 
 ```sh
-./tools/configure.sh -l ev49n51a:bridge
+./tools/configure.sh -E -l ev49n51a:bridge
 kconfig-tweak --enable SYSTEM_MDIO \
               --disable NSH_DISABLE_MW --disable NSH_DISABLE_MB \
               --disable NSH_DISABLE_MH
@@ -321,6 +408,9 @@ ping -c 1000 -i 0.2 10.0.0.2
 no início após o reset (primeiro ARP) não é falha; perdas depois disso são.
 
 Depois, `ifconfig eth0` na placa: TX `Queued` = `Sent`; `Errors` de TX e RX = 0.
+Faça esta conferência **antes** do T3: o UDP originado pela placa (T3) deixa
+`Queued` maior que `Sent` (quadros descartados na fila de TX), e a diferença
+fica até o próximo reset, sem crescer com a rede ociosa.
 
 ### T3 – Vazão
 
