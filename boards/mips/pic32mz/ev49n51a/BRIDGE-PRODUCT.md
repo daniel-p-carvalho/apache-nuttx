@@ -396,8 +396,10 @@ Referência na bancada (2026-10-10, imagem do produto com 10 Mbps e sem
 pelo switch, e um laptop no SoftAP. Nas 4 associações (a inicial e 3
 reassociações) mais uma renovação, o laptop recebeu `10.0.0.100` com
 *server identifier* `10.0.0.1` (MAC do R550); `ping` laptop → `br0` com 100
-pacotes sem perda (0,8 ms a 9,4 ms); `Errors` de `eth0` e `wlan0` em 0;
-`ps` na placa sem `dhcpd`.
+pacotes sem perda (0,8 ms a 9,4 ms); `ping` laptop → R550 (`10.0.0.1`),
+100 pacotes sem perda (1,2 ms a 7,5 ms) e sessão telnet ao NSH do R550
+(`eth0` com MAC `1e:79:5e:a4:20:24`) funcionando; `Errors` de `eth0` e
+`wlan0` em 0; `ps` na placa sem `dhcpd`.
 
 Cuidado ao reproduzir com um PC na mesma rede: se o PC tiver o mesmo IP do
 IED (`10.0.0.1`), o `ping` do cliente Wi-Fi para esse IP é respondido
