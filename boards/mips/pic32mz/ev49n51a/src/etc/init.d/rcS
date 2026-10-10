@@ -28,10 +28,14 @@ ifconfig eth0 down
 ifconfig eth0 hw 02:e0:de:ad:be:ef
 ifconfig eth0 0.0.0.0 up
 
-/* wlan0 as a WPA2-PSK (CCMP) SoftAP */
+/* wlan0 as a WPA2-PSK (or WPA3-SAE) SoftAP, CCMP */
 
 wapi mode wlan0 3
+#ifdef CONFIG_EV49N51A_BRIDGE_WPA3
+wapi psk wlan0 CONFIG_EV49N51A_BRIDGE_PSK 3 3
+#else
 wapi psk wlan0 CONFIG_EV49N51A_BRIDGE_PSK 3 2
+#endif
 wapi freq wlan0 CONFIG_EV49N51A_BRIDGE_CHANNEL 1
 wapi essid wlan0 CONFIG_EV49N51A_BRIDGE_SSID 1
 ifconfig wlan0 0.0.0.0
