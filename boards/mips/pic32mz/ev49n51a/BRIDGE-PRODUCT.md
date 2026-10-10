@@ -46,6 +46,57 @@ iniciá-lo. `dhcpd_stop` (e não `kill`) é o jeito de pará-lo.
 
 ## 3. Compilar e gravar
 
+### 3.0 Antes de tudo: o `nuttx-apps` precisa do `brctl`
+
+O script de boot (`rcS`) cria a bridge com o comando `brctl`
+(`CONFIG_SYSTEM_BRCTL`), que ainda **não está** no `nuttx-apps` oficial: ele
+está no pull request
+[apache/nuttx-apps#3819](https://github.com/apache/nuttx-apps/pull/3819), uma
+única *commit* (`system/brctl`). Com um `nuttx-apps` sem ele:
+
+* `./tools/configure.sh` não reclama, mas a opção `CONFIG_SYSTEM_BRCTL` é
+  descartada em silêncio (o Kconfig não a conhece);
+* o build termina normalmente, mas a placa sobe **sem `br0`**: no console
+  aparece `nsh: brctl: command not found` e `ifconfig` só mostra `eth0` e
+  `wlan0`. O mesmo acontece, por exemplo, ao normalizar o defconfig.
+
+O diretório `apps` deve ficar ao lado do `nuttx` (`../apps`) e estar no
+*branch* do `brctl`. Escolha **uma** das formas:
+
+**A. Usar o *branch* da PR (mais simples).**
+
+```sh
+cd ../apps
+git remote add daniel https://github.com/daniel-p-carvalho/nuttx-apps.git
+git fetch daniel feat/brctl
+git checkout -b feat/brctl daniel/feat/brctl
+```
+
+**B. Se o seu `apps` já está em outro *branch* ou mais novo que o da PR**,
+aplique só a *commit* do `brctl` por cima dele:
+
+```sh
+cd ../apps
+git fetch https://github.com/apache/nuttx-apps pull/3819/head
+git cherry-pick FETCH_HEAD
+```
+
+Confira antes de compilar:
+
+```sh
+ls ../apps/system/brctl/Kconfig          # tem que existir
+cd ../nuttx
+./tools/configure.sh -l ev49n51a:bridge
+grep CONFIG_SYSTEM_BRCTL .config         # tem que mostrar =y
+```
+
+Se o `grep` não mostrar `CONFIG_SYSTEM_BRCTL=y`, o `apps` está sem o
+`brctl`: não compile, volte ao passo acima. Quando a PR #3819 for aceita,
+volte o `apps` para o `master` (`git checkout master && git pull`) e esta
+etapa deixa de ser necessária.
+
+### 3.0.1 Ferramentas e comandos
+
 Precisa do XC32 v6.00 e do `genromfs` no `PATH`:
 
 ```sh
