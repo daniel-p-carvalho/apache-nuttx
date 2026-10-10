@@ -54,6 +54,8 @@ export PATH=/opt/microchip/xc32/v6.00/bin:<pasta do genromfs>:$PATH
 make -j$(nproc)
 ```
 
+Instalação das ferramentas: ver o [Anexo 9](#9-anexo-instalação-das-ferramentas).
+
 O resultado é `nuttx.hex`. Se você mudar uma opção que afeta o `rcS`
 (`EV49N51A_BRIDGE_DHCPD`, `_WPA3`, SSID, senha, canal, endereço), rode
 `touch boards/mips/pic32mz/ev49n51a/src/etc/init.d/rcS` antes do `make`: o
@@ -336,17 +338,58 @@ lowerhalf. Esta análise vem do projeto e não foi testada na bancada.
 
 ### T9 – DHCP do IED através da bridge
 
-1. Placa com a imagem do produto; confirme que a placa **não** serve DHCP:
-   `ps` não deve listar `dhcpd`.
-2. Conecte um cliente Wi-Fi ao SoftAP `NuttX-BR` configurado para DHCP.
-3. No cliente: o endereço recebido deve estar na faixa do IED e o
-   *server identifier* da resposta deve ser o endereço do IED.
-4. Renove o lease (`dhclient -r; dhclient` ou equivalente) e faça `ping`
-   do cliente ao IED e do IED ao cliente.
-5. Repita com o cliente reassociando ao AP três vezes.
+**Objetivo:** provar que um cliente Wi-Fi associado ao SoftAP da placa
+recebe endereço do servidor DHCP do **IED**, com a placa apenas repassando
+os quadros (bridge transparente).
 
-**Aprovado:** o cliente obtém endereço do IED nas três vezes, ping sem
-perda, e `br0` (`10.0.0.2`) continua alcançável.
+**Preparação**
+
+- Placa com a imagem do produto, `eth0` ligada ao IED (direto ou pelo
+  switch da instalação) e console serial aberto (115200 8N1).
+- O IED é o **único** servidor DHCP da rede. O endereço do IED não pode ser
+  `10.0.0.2` (é o da `br0`), e `10.0.0.2` deve ficar fora da faixa de leases
+  do IED.
+- Um cliente Wi-Fi (laptop ou celular) sem IP fixo, configurado para DHCP.
+
+**Passos**
+
+1. **Confirme que a placa não serve DHCP.** No console da placa:
+
+   ```
+   nsh> ps
+   ```
+
+   Não pode haver nenhuma linha `dhcpd`. Se houver, `dhcpd_stop`. Com a
+   placa e o IED servindo DHCP ao mesmo tempo o teste não vale.
+2. **Confirme a bridge:** `ifconfig br0` deve mostrar `10.0.0.2` e
+   `RUNNING`; `eth0` e `wlan0` também `RUNNING`.
+3. **Associe o cliente ao SoftAP `NuttX-BR`** (senha `nuttxbridge`, WPA2)
+   com IP automático. No Linux com NetworkManager:
+   `nmcli dev wifi connect NuttX-BR password nuttxbridge`.
+4. **Verifique o endereço recebido.** No cliente, `ip -4 addr show <interface>`:
+   o IP deve estar na faixa do IED, e o *server identifier* do lease deve ser
+   o IP do IED (por exemplo `nmcli -f DHCP4 dev show <interface>`, ou o log do
+   `dhclient`). Se o servidor for `10.0.0.2`, é a placa servindo: o passo 1
+   falhou.
+5. **Ping nos dois sentidos.** Do cliente: `ping -c 100 <ip do IED>` e
+   `ping 10.0.0.2` (a `br0`). Do IED, ping para o IP do cliente.
+6. **Renove o lease.** No cliente:
+   `sudo dhclient -r <interface> && sudo dhclient <interface>` (ou desligue e
+   ligue o Wi-Fi). O endereço deve voltar a ser do IED.
+7. **Repita a associação 3 vezes** (Linux: `nmcli con down NuttX-BR` e
+   `nmcli con up NuttX-BR`). Em cada uma o cliente deve obter endereço do IED.
+8. **Contadores no fim:** `ifconfig eth0` e `ifconfig wlan0` na placa com
+   `Errors` em 0.
+
+**Aprovado:**
+
+- o cliente obtém endereço do IED nas 3 associações;
+- ping sem perda (uma perda no primeiro ARP é aceitável);
+- `br0` (`10.0.0.2`) continua alcançável;
+- a placa não oferece nenhum lease.
+
+**Se falhar**, anote qual servidor respondeu (IP do *server identifier*), a
+saída de `ps` e `ifconfig` e o log serial.
 
 Referência na bancada: com um R550 como IED (servidor DHCP em `10.0.0.1`,
 `eth0` ligada direto), o laptop no AP recebeu `10.0.0.100` com
@@ -388,3 +431,85 @@ modelo) e, se possível, o log do console serial.
   cabo entre parceiros que negociam velocidades diferentes sem reiniciar a
   porta não é suportado; com o limite de 10 Mbps isso não se aplica, pois
   toda negociação termina em 10 Mbps.
+
+## 9. Anexo: instalação das ferramentas
+
+Versões usadas na bancada: **MPLAB X v6.20**, **XC32 v6.00** (GCC 13.2.1) e o
+**DFP `PIC32MZ-W_DFP` 1.12.356**. Para apenas **gravar** a placa basta o
+MPLAB IPE (`ipecmd`) do MPLAB X; o XC32 e o DFP são necessários só para
+**compilar**.
+
+### 9.1 Baixar
+
+- MPLAB X IDE v6.20 para Linux: `MPLABX-v6.20-linux-installer.sh` (~936 MB).
+- MPLAB XC32 v6.00 para Linux x64:
+  `xc32-v6.00-full-install-linux-x64-installer.run` (~1,4 GB).
+- DFP: `Microchip.PIC32MZ-W_DFP.1.12.356.atpack` em
+  `packs.download.microchip.com` (é um arquivo zip).
+
+Os dois instaladores ficam no site da Microchip, nas páginas de downloads do
+MPLAB X e do XC32 (versões anteriores). Procure exatamente por
+"MPLAB X IDE v6.20" e "MPLAB XC32 v6.00".
+
+### 9.2 MPLAB X
+
+```sh
+chmod +x MPLABX-v6.20-linux-installer.sh
+sudo ./MPLABX-v6.20-linux-installer.sh
+```
+
+Instala em `/opt/microchip/mplabx/v6.20`; o `ipecmd` fica em
+`mplab_platform/mplab_ipe/ipecmd.sh`. Marque o MPLAB IPE no instalador (a IDE
+completa é opcional). O MPLAB X traz o próprio Java; não é preciso instalar
+um JDK.
+
+### 9.3 XC32
+
+```sh
+chmod +x xc32-v6.00-full-install-linux-x64-installer.run
+sudo ./xc32-v6.00-full-install-linux-x64-installer.run
+```
+
+Instala em `/opt/microchip/xc32/v6.00`. O modo de licença gratuito basta.
+Confira com `/opt/microchip/xc32/v6.00/bin/xc32-gcc --version`.
+
+### 9.4 DFP
+
+```sh
+mkdir -p ~/microchip/WFI32-W_DFP
+unzip Microchip.PIC32MZ-W_DFP.1.12.356.atpack -d ~/microchip/WFI32-W_DFP
+```
+
+O `Make.defs` da placa procura o DFP em `~/microchip/WFI32-W_DFP`. Em outro
+local, passe `WFI32E01_DFP_DIR=<pasta>` ao `make`.
+
+### 9.5 Permissão do PICkit 3 (Linux)
+
+Crie `/etc/udev/rules.d/99-pickit3.rules`:
+
+```
+# Microchip PICkit 3
+ATTRS{idVendor}=="04d8", ATTRS{idProduct}=="900a", MODE="0666", GROUP="plugdev", TAG+="uaccess"
+```
+
+```sh
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+O usuário deve estar no grupo `plugdev`. Replugue o PICkit 3 depois.
+
+### 9.6 Outras ferramentas do build
+
+`make`, `gcc` do host, `python3`, `kconfig-frontends` (`kconfig-tweak`,
+`make menuconfig`) e `genromfs` (gera o `/etc` embutido). Na bancada o
+`genromfs` está em `~/nuttx-tools/bin` e vai no `PATH` junto com o XC32.
+
+### 9.7 Teste da instalação
+
+```sh
+cd /opt/microchip/mplabx/v6.20/mplab_platform/mplab_ipe
+./ipecmd.sh -P32MZ1025W104132 -TPPK3 -M -F<caminho>/nuttx.hex -Y -OL
+```
+
+Deve terminar com `Operation Succeeded`. A gravação leva ~2 min. Se o
+PICkit 3 não for encontrado, confira a regra udev (9.5) e o cabo ICSP.
