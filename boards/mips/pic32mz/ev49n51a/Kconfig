@@ -18,4 +18,44 @@ config EV49N51A_PHY_INTERRUPT
 		which is not fitted on the EV49N51A, so select this option only if
 		R309 is fitted or nINT is otherwise wired to RK6.
 
+config EV49N51A_BRIDGE_BOOT
+	bool "Start a Wi-Fi AP bridged to Ethernet at boot"
+	default n
+	depends on ETC_ROMFS && NET_BRIDGE && SYSTEM_BRCTL && PIC32MZ_W1_WLAN && PIC32MZ_ETHERNET
+	---help---
+		Install /etc/init.d/rcS that configures wlan0 as a SoftAP, creates
+		br0 and adds eth0 and wlan0 as bridge ports.
+
+if EV49N51A_BRIDGE_BOOT
+
+config EV49N51A_BRIDGE_SSID
+	string "SoftAP SSID"
+	default "NuttX-BR"
+
+config EV49N51A_BRIDGE_PSK
+	string "SoftAP WPA2 passphrase (8..63 characters)"
+	default "nuttxbridge"
+
+config EV49N51A_BRIDGE_CHANNEL
+	int "SoftAP 2.4 GHz channel"
+	default 6
+	range 1 13
+
+config EV49N51A_BRIDGE_IPADDR
+	string "br0 IPv4 address"
+	default "10.0.0.2"
+	---help---
+		Address of the bridge interface itself (eth0 and wlan0 stay at
+		0.0.0.0).  The netmask is 255.255.255.0.
+
+config EV49N51A_BRIDGE_DHCPD
+	bool "Run the DHCP server on br0"
+	default n
+	depends on EXAMPLES_DHCPD
+	---help---
+		Serve leases on br0 from the board.  Leave disabled when another
+		DHCP server is reachable through the bridge.
+
+endif # EV49N51A_BRIDGE_BOOT
+
 endif # ARCH_BOARD_EV49N51A
