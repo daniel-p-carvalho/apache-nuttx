@@ -33,13 +33,22 @@ config EV49N51A_BRIDGE_SSID
 	default "NuttX-BR"
 
 config EV49N51A_BRIDGE_PSK
-	string "SoftAP WPA2 passphrase (8..63 characters)"
+	string "SoftAP passphrase (8..63 characters)"
 	default "nuttxbridge"
 
 config EV49N51A_BRIDGE_CHANNEL
 	int "SoftAP 2.4 GHz channel"
 	default 6
 	range 1 13
+
+config EV49N51A_BRIDGE_WPA3
+	bool "WPA3-Personal (SAE) instead of WPA2-PSK"
+	default n
+	depends on PIC32MZ_W1_BA414E
+	---help---
+		Configure the SoftAP for WPA3-Personal.  Stations that only
+		support WPA2 cannot join.  Needs the BA414E engine and its
+		microcode (see the PIC32MZ_W1_BA414E options).
 
 config EV49N51A_BRIDGE_IPADDR
 	string "br0 IPv4 address"
