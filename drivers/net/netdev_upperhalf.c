@@ -35,6 +35,7 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/kthread.h>
 #include <nuttx/mm/iob.h>
+#include <nuttx/net/bridge.h>
 #include <nuttx/net/can.h>
 #include <nuttx/net/net.h>
 #include <nuttx/net/netdev_lowerhalf.h>
@@ -84,6 +85,12 @@ struct netdev_upperhalf_s
 
 #ifdef CONFIG_NET_VLAN
   struct netdev_vlan_entry_s vlan[CONFIG_NET_VLAN_COUNT];
+#endif
+
+  /* The bridge port of this device, NULL if it is not bridged */
+
+#ifdef CONFIG_NET_BRIDGE
+  FAR struct bridge_port_s *bridge;
 #endif
 
   bool txing;
@@ -688,6 +695,56 @@ static void ip_input(FAR struct net_driver_s *dev)
 #endif
 
 /****************************************************************************
+ * Name: netdev_upper_input
+ *
+ * Description:
+ *   Pass a received packet, which is in dev->d_iob, to the protocol of the
+ *   link layer.
+ *
+ * Input Parameters:
+ *   dev - Reference to the NuttX network driver state structure
+ *
+ * Assumptions:
+ *   Called with the network device locked.
+ *
+ ****************************************************************************/
+
+static void netdev_upper_input(FAR struct net_driver_s *dev)
+{
+  switch (dev->d_lltype)
+    {
+#ifdef CONFIG_NET_LOOPBACK
+      case NET_LL_LOOPBACK:
+#endif
+#ifdef CONFIG_NET_ETHERNET
+      case NET_LL_ETHERNET:
+#endif
+#ifdef CONFIG_DRIVERS_IEEE80211
+      case NET_LL_IEEE80211:
+#endif
+#if defined(CONFIG_NET_LOOPBACK) || defined(CONFIG_NET_ETHERNET) || \
+    defined(CONFIG_DRIVERS_IEEE80211)
+        eth_input(dev);
+        break;
+#endif
+#ifdef CONFIG_NET_MBIM
+      case NET_LL_MBIM:
+        ip_input(dev);
+        break;
+#endif
+#ifdef CONFIG_NET_CAN
+      case NET_LL_CAN:
+        ninfo("CAN frame");
+        can_input(dev);
+        break;
+#endif
+      default:
+        nerr("Unknown link type %d\n", dev->d_lltype);
+        break;
+    }
+}
+
+/****************************************************************************
  * Function: netdev_upper_rxpoll_work
  *
  * Description:
@@ -732,37 +789,20 @@ static void netdev_upper_rxpoll_work(FAR struct netdev_upperhalf_s *upper)
       pkt_input(dev);
 #endif
 
-      switch (dev->d_lltype)
+#ifdef CONFIG_NET_BRIDGE
+      /* The packets of a bridge port belong to the bridge */
+
+      if (upper->bridge != NULL)
         {
-#ifdef CONFIG_NET_LOOPBACK
-        case NET_LL_LOOPBACK:
-#endif
-#ifdef CONFIG_NET_ETHERNET
-        case NET_LL_ETHERNET:
-#endif
-#ifdef CONFIG_DRIVERS_IEEE80211
-        case NET_LL_IEEE80211:
-#endif
-#if defined(CONFIG_NET_LOOPBACK) || defined(CONFIG_NET_ETHERNET) || \
-    defined(CONFIG_DRIVERS_IEEE80211)
-          eth_input(dev);
-          break;
-#endif
-#ifdef CONFIG_NET_MBIM
-        case NET_LL_MBIM:
-          ip_input(dev);
-          break;
-#endif
-#ifdef CONFIG_NET_CAN
-        case NET_LL_CAN:
-          ninfo("CAN frame");
-          can_input(dev);
-          break;
-#endif
-        default:
-          nerr("Unknown link type %d\n", dev->d_lltype);
-          break;
+          FAR netpkt_t *brpkt = dev->d_iob;
+
+          netdev_iob_clear(dev);
+          bridge_input(upper->bridge, brpkt);
+          continue;
         }
+#endif
+
+      netdev_upper_input(dev);
     }
 
   netdev_unlock(dev);
@@ -844,6 +884,7 @@ static inline void netdev_upper_queue_work(FAR struct net_driver_s *dev)
       case NETDEV_RX_WORK:
         {
           FAR struct work_s *work = upper->work;
+
           if (work_available(work))
             {
               /* Schedule to serialize the poll on the worker thread. */
@@ -1483,6 +1524,13 @@ int netdev_lower_unregister(FAR struct netdev_lowerhalf_s *dev)
   netdev_upper_vlan_foreach(upper, vlan_unregister);
 #endif
 
+#ifdef CONFIG_NET_BRIDGE
+  if (upper->bridge != NULL)
+    {
+      bridge_port_detach(upper->bridge);
+    }
+#endif
+
   ret = netdev_unregister(&dev->netdev);
   if (ret < 0)
     {
@@ -1534,6 +1582,7 @@ void netdev_lower_carrier_on(FAR struct netdev_lowerhalf_s *dev)
 {
 #ifdef CONFIG_NET_VLAN
   FAR struct netdev_upperhalf_s *upper = dev->netdev.d_private;
+
   netdev_upper_vlan_foreach(upper, netdev_lower_carrier_on);
 #endif
 
@@ -1558,6 +1607,7 @@ void netdev_lower_carrier_off(FAR struct netdev_lowerhalf_s *dev)
 {
 #ifdef CONFIG_NET_VLAN
   FAR struct netdev_upperhalf_s *upper = dev->netdev.d_private;
+
   netdev_upper_vlan_foreach(upper, netdev_lower_carrier_off);
 #endif
 
@@ -1606,10 +1656,23 @@ void netdev_lower_rxready(FAR struct netdev_lowerhalf_s *dev)
 
 void netdev_lower_txdone(FAR struct netdev_lowerhalf_s *dev)
 {
-#ifdef CONFIG_NET_VLAN
+#if defined(CONFIG_NET_VLAN) || defined(CONFIG_NET_BRIDGE)
   FAR struct netdev_upperhalf_s *upper = dev->netdev.d_private;
+#endif
+
+#ifdef CONFIG_NET_VLAN
   netdev_upper_vlan_foreach(upper, netdev_lower_txdone);
 #endif
+
+#ifdef CONFIG_NET_BRIDGE
+  /* The bridge device may wait for room on its ports */
+
+  if (upper->bridge != NULL)
+    {
+      bridge_txdone(upper->bridge);
+    }
+#endif
+
   if (dev->rxtype == NETDEV_RX_DIRECT)
     {
       netdev_upper_txavail_work(dev->netdev.d_private);
@@ -1700,6 +1763,103 @@ int netdev_lower_vlan_del(FAR struct netdev_lowerhalf_s *dev, uint16_t vid)
     }
 
   return -ENOENT;
+}
+#endif
+
+/****************************************************************************
+ * Name: netdev_lower_find
+ *
+ * Description:
+ *   Get the lower half of a network device.
+ *
+ * Input Parameters:
+ *   dev - The network device
+ *
+ * Returned Value:
+ *   The lower half device driver structure, or NULL if the device is not
+ *   managed by the upper half network driver (e.g. legacy drivers).
+ *
+ ****************************************************************************/
+
+FAR struct netdev_lowerhalf_s *
+netdev_lower_find(FAR struct net_driver_s *dev)
+{
+  FAR struct netdev_upperhalf_s *upper;
+
+  if (dev == NULL || dev->d_ifup != netdev_upper_ifup)
+    {
+      return NULL;
+    }
+
+  upper = dev->d_private;
+  return upper->lower;
+}
+
+/****************************************************************************
+ * Name: netdev_lower_input
+ *
+ * Description:
+ *   Pass a packet to the network stack as if the device had received it.
+ *   Used by virtual devices (bridge) that get their packets from another
+ *   device.
+ *
+ * Input Parameters:
+ *   dev - The lower half device driver structure
+ *   pkt - The packet, owned by the network stack from now on
+ *
+ ****************************************************************************/
+
+void netdev_lower_input(FAR struct netdev_lowerhalf_s *dev,
+                        FAR netpkt_t *pkt)
+{
+  FAR struct net_driver_s *netdev = &dev->netdev;
+
+  netdev_lock(netdev);
+
+  if (!IFF_IS_UP(netdev->d_flags))
+    {
+      NETDEV_RXDROPPED(netdev);
+      iob_free_chain(pkt);
+      netdev_unlock(netdev);
+      return;
+    }
+
+  netdev_iob_replace_l2(netdev, pkt);
+  NETDEV_RXPACKETS(netdev);
+
+#ifdef CONFIG_NET_PKT
+  pkt_input(netdev);
+#endif
+
+  netdev_upper_input(netdev);
+  netdev_iob_release(netdev);
+  netdev_unlock(netdev);
+}
+
+/****************************************************************************
+ * Name: netdev_lower_bridge_set
+ *
+ * Description:
+ *   Make the device a port of a bridge, or release it from the bridge.
+ *   The packets received by a bridge port are given to the bridge instead
+ *   of the network stack.
+ *
+ * Input Parameters:
+ *   dev  - The lower half device driver structure
+ *   port - The bridge port, or NULL to release the device
+ *
+ * Assumptions:
+ *   Called with the device locked.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_NET_BRIDGE
+void netdev_lower_bridge_set(FAR struct netdev_lowerhalf_s *dev,
+                             FAR struct bridge_port_s *port)
+{
+  FAR struct netdev_upperhalf_s *upper = dev->netdev.d_private;
+
+  upper->bridge = port;
 }
 #endif
 
@@ -1871,6 +2031,7 @@ int netpkt_setdatalen(FAR struct netdev_lowerhalf_s *dev,
 {
   uint8_t llhdrlen = NET_LL_HDRLEN(&dev->netdev);
   int ret = iob_update_pktlen(pkt, len - llhdrlen, false);
+
   return ret >= 0 ? ret + llhdrlen : ret;
 }
 
