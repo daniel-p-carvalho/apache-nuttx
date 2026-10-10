@@ -66,6 +66,44 @@ Reset da placa sem regravar (~11 s):
 Console: UART de debug (X5: 1 = TX-in RA8, 2 = RX-out RA9, 3 = GND),
 115200 8N1.
 
+### 3.1 Wi-Fi: biblioteca da Microchip e segurança (WPA2 / WPA3)
+
+**Biblioteca Wi-Fi (blob).** O `pic32mzw1.a` da Microchip não está no
+repositório: o build o baixa sozinho (`context::`) de
+`github.com/Microchip-MPLAB-Harmony/wireless_wifi`, tag **v3.13.0**, para
+`arch/mips/src/chip/`. O primeiro build precisa de rede; `make distclean`
+apaga o download e ele é baixado de novo. Só compila com XC32. Ele fica
+sob a licença da Microchip, não Apache: confira se ela cobre a distribuição
+da firmware.
+
+**WPA2 (padrão do produto).** SoftAP WPA2-PSK/CCMP. Não usa o acelerador
+de criptografia BA414E, portanto **não há microcódigo nem download extra**.
+
+**WPA3-Personal (opcional, a critério do integrador).** O SoftAP passa a
+exigir SAE; clientes só WPA2 não conseguem associar. Para habilitar:
+
+```sh
+./tools/configure.sh -l ev49n51a:bridge
+kconfig-tweak --enable PIC32MZ_W1_BA414E --enable EV49N51A_BRIDGE_WPA3
+make olddefconfig
+touch boards/mips/pic32mz/ev49n51a/src/etc/init.d/rcS
+make -j$(nproc)
+```
+
+- O `touch` é necessário: o `rcS` só é reprocessado quando o próprio arquivo
+  muda, não quando o `.config` muda.
+- O acelerador BA414E precisa do microcódigo. Por padrão
+  (`PIC32MZ_W1_BA414E_UCODE_BUILTIN`) o build baixa o `drv_ba414e.c` do
+  Harmony `crypto` v3.9.0 e extrai as 810 palavras (confere o sha256;
+  se o servidor devolver um erro, o build recusa e apaga o arquivo: basta
+  repetir o `make`). Alternativa: `PIC32MZ_W1_BA414E_UCODE_FILE`, que
+  carrega o microcódigo de um arquivo (`/etc/ba414e.bin`) no primeiro uso.
+- Esse arquivo do Harmony está sob a licença MPLAB Harmony da Microchip, que
+  restringe o uso a produtos Microchip e a redistribuição: confira com o
+  jurídico antes de distribuir uma imagem com WPA3.
+- Validado em bancada: imagem com WPA3 anunciando `NuttX-BR` como WPA3 e um
+  laptop associado por SAE (10/10 pings, 0% de perda).
+
 ## 4. Controle do modo de conexão Ethernet
 
 ### 4.1 Imagem do produto: 10 Mbps fixo (decidido na compilação)
