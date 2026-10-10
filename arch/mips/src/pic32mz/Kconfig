@@ -1234,6 +1234,15 @@ config PIC32MZ_PHY_AUTONEG
 	---help---
 		Enable auto-negotiation
 
+config PIC32MZ_PHY_10MBPS_ONLY
+	bool "Advertise 10BASE-T only"
+	default n
+	depends on PIC32MZ_ETHERNET && PIC32MZ_PHY_AUTONEG
+	---help---
+		Do not advertise 100BASE-TX during auto-negotiation, so the link
+		always comes up at 10 Mbps. Workaround for boards whose Ethernet
+		TX path is not reliable at 100 Mbps.
+
 config PIC32MZ_PHY_SPEED100
 	bool "100Mbps speed"
 	default n
