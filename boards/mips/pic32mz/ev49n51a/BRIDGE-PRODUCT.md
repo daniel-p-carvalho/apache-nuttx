@@ -28,11 +28,17 @@ conexão e quais testes executar. Vale só para o branch
    canal 6.
 3. `br0` é criada com `eth0` e `wlan0` como portas e recebe `10.0.0.2/24`.
    Só `br0` tem endereço.
-4. O servidor DHCP roda em `br0`, entregando endereços a partir de
-   `10.0.0.100`.
+4. **A placa não roda servidor DHCP** (`EV49N51A_BRIDGE_DHCPD=n`). O
+   servidor DHCP é o **IED**; a placa é uma bridge transparente entre
+   `eth0` e o SoftAP, e os clientes Wi-Fi recebem endereço do IED através
+   dela. O endereço `10.0.0.2` de `br0` é só de gerenciamento da placa e
+   deve ficar **fora da faixa de leases do IED**.
 
 Os valores vêm das opções `EV49N51A_BRIDGE_SSID`, `_PSK`, `_CHANNEL`,
-`_IPADDR` e `_DHCPD` (Kconfig da placa).
+`_IPADDR` e `_DHCPD` (Kconfig da placa). O servidor da placa continua
+compilado (`dhcpd_start br0` / `dhcpd_stop` no NSH) para uso de bancada
+quando **não** há outro servidor na rede; nunca deixe dois servidores
+ativos ao mesmo tempo.
 
 ## 3. Compilar e gravar
 
@@ -182,10 +188,10 @@ instalação) e anote os resultados na tabela da seção 6.
 
 - Placa com a imagem do produto, alimentada como na instalação; console na
   UART de debug.
-- IED em `eth0` com IP estático em `10.0.0.0/24` diferente de `10.0.0.2`
-  (ou usando o DHCP da placa, se o IED usar DHCP).
+- IED em `eth0`, **servidor DHCP** da rede `10.0.0.0/24` (endereço do IED
+  diferente de `10.0.0.2`, leases fora de `10.0.0.2`).
 - Um cliente Wi-Fi conectado ao SoftAP `NuttX-BR`, para o teste através da
-  bridge. Ele recebe endereço do DHCP da placa.
+  bridge. Ele deve receber o endereço **do IED**.
 - Um PC com `iperf` (2.x) e `ping` do lado Ethernet, ou as ferramentas de
   teste do próprio IED. Onde o IED não roda `iperf`, troque esses testes pelo
   tráfego da aplicação do IED e aplique os mesmos critérios (sem perda, sem
@@ -279,6 +285,26 @@ precisar encaminhá-los, isso deve ser informado: exige uma pequena alteração
 no driver (hook da bridge antes do despacho por EtherType) ou a migração para
 lowerhalf. Esta análise vem do projeto e não foi testada na bancada.
 
+### T9 – DHCP do IED através da bridge
+
+1. Placa com a imagem do produto; confirme que a placa **não** serve DHCP:
+   `ps` não deve listar `dhcpd`.
+2. Conecte um cliente Wi-Fi ao SoftAP `NuttX-BR` configurado para DHCP.
+3. No cliente: o endereço recebido deve estar na faixa do IED e o
+   *server identifier* da resposta deve ser o endereço do IED.
+4. Renove o lease (`dhclient -r; dhclient` ou equivalente) e faça `ping`
+   do cliente ao IED e do IED ao cliente.
+5. Repita com o cliente reassociando ao AP três vezes.
+
+**Aprovado:** o cliente obtém endereço do IED nas três vezes, ping sem
+perda, e `br0` (`10.0.0.2`) continua alcançável.
+
+Referência na bancada: com um R550 como IED (servidor DHCP em `10.0.0.1`,
+`eth0` ligada direto), o laptop no AP recebeu `10.0.0.100` com
+*server identifier* `10.0.0.1`; ping laptop → IED 0% de perda (~5,8 ms) e
+telnet ao IED funcionando. Esse teste foi feito antes do limite de 10 Mbps
+e deve ser repetido com a imagem atual.
+
 ## 6. Tabela de resultados
 
 | Teste | Descrição                                   | Aprovado | Observações |
@@ -291,6 +317,7 @@ lowerhalf. Esta análise vem do projeto e não foi testada na bancada.
 | T6    | Cabo da instalação                          | ☐        |             |
 | T7    | Soak de 12 h                                | ☐        |             |
 | T8    | Requisito de tráfego não-IP                 | ☐        |             |
+| T9    | DHCP do IED através da bridge               | ☐        |             |
 
 ## 7. Como relatar um problema
 
