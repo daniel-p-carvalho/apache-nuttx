@@ -329,12 +329,15 @@ crescimento do heap da placa (`free` no início e no fim), sem resets.
 
 ### T8 – Tráfego não-IP do IED (verificação)
 
-O driver Ethernet do PIC32MZ é do tipo *legacy*, então a bridge só enxerga
-quadros IPv4, IPv6 e ARP vindos dele. Outros EtherTypes do IED (por exemplo
-GOOSE IEC 61850, LLDP) **não são encaminhados** ao lado Wi-Fi. Se o produto
-precisar encaminhá-los, isso deve ser informado: exige uma pequena alteração
-no driver (hook da bridge antes do despacho por EtherType) ou a migração para
-lowerhalf. Esta análise vem do projeto e não foi testada na bancada.
+O driver Ethernet do PIC32MZ usa a interface *lowerhalf* e a bridge recebe
+**todos** os quadros da porta, de qualquer EtherType (a bridge não tem filtro
+por protocolo). Portanto GOOSE IEC 61850, LLDP e outros quadros do IED são
+encaminhados ao lado Wi-Fi como qualquer tráfego, sujeitos às regras de
+encaminhamento: multicast e broadcast são inundados, e os endereços
+01:80:C2:00:00:00 a 01:80:C2:00:00:0F (LLDP, STP) **não** são encaminhados.
+Verificados na bancada: ARP, IPv4 e broadcast nos dois sentidos. Quadros
+GOOSE reais ainda não foram testados; para isso, use um gerador de quadros
+com o EtherType 0x88B8 no IED e confira no notebook (tcpdump) que chegam.
 
 ### T9 – DHCP do IED através da bridge
 
