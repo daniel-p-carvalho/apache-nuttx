@@ -36,6 +36,14 @@ de conexão e quais testes executar. Vale só para o branch
    dela. O endereço `10.0.0.2` de `br0` é só de gerenciamento da placa e
    deve ficar **fora da faixa de leases do IED**.
 
+5. **Watchdog**: `/dev/watchdog0` é registrado no boot e o *auto-monitor*
+   do NuttX o inicia e o mantém vivo (a cada 1 s; timeout do hardware
+   ≈ 8,2 s, `BOARD_WD_PRESCALER=8192`). Se o sistema travar a ponto de não
+   executar mais os temporizadores do kernel, a placa reinicia sozinha e
+   volta como AP + `br0`. O boot seguinte a um reset do watchdog registra
+   `Last reset was caused by the watchdog` no console. Ver T10 e as
+   [Limitações](#8-limitações).
+
 Os valores vêm das opções `EV49N51A_BRIDGE_SSID`, `_PSK`, `_CHANNEL`,
 `_IPADDR`, `_DHCPD` e `_WPA3` (Kconfig da placa). O servidor da placa
 continua compilado (`dhcpd_start br0` / `dhcpd_stop` no NSH) para uso de
@@ -550,6 +558,44 @@ IED (`10.0.0.1`), o `ping` do cliente Wi-Fi para esse IP é respondido
 localmente pelo próprio PC e não prova nada sobre o IED; confira o MAC do
 vizinho (`ip neigh`) ou tire o IP duplicado.
 
+### T10 – Watchdog
+
+**Objetivo:** confirmar que (1) o watchdog está armado e a placa **não**
+reinicia sozinha em operação normal, e (2) a placa reinicia quando o
+watchdog expira e volta funcionando. A imagem foi construída sem teste em
+hardware desta função (a unidade de tempo do watchdog, `CONFIG_PIC32MZ_WDT_BASE_US`
+= 1000 µs, vem da especificação do clock LPRC e não foi medida), por isso
+**este teste é o primeiro a fazer**.
+
+**Passos** (console serial)
+
+1. Depois do boot, `ls /dev` deve listar `watchdog0`. Deixe a placa ociosa
+   por 2 minutos: **não** pode haver reinício (o log não pode repetir o banner
+   do NuttX). Se reiniciar em loop a cada poucos segundos, a unidade de tempo
+   está errada: pare aqui e relate.
+2. Provoque a expiração com o exemplo do NuttX, que assume o watchdog (isso
+   desliga o auto-monitor), pinga por 5 s e depois para de pingar:
+
+   ```
+   nsh> wdog
+   ```
+
+   A saída mostra `ping elapsed=...` e depois `NO ping elapsed=...` a cada
+   0,5 s. Quando a placa reinicia, a diferença entre o último
+   `NO ping elapsed` e o último `ping elapsed` é o **timeout real** em ms.
+   Esperado: ≈ 8000 ms (de 6700 a 9300 ms, a LPRC varia −18%/+13%).
+3. No boot seguinte, o console deve mostrar
+   `Last reset was caused by the watchdog`, e a placa deve voltar com
+   `br0 = 10.0.0.2`, `wlan0` como AP e `eth0` com link (confira com
+   `ifconfig` e `ping`).
+4. Em um reinício por energia ou por `reboot`, a mensagem do item 3 **não**
+   pode aparecer.
+
+**Critério de aprovação:** sem reinício espontâneo em 2 min; timeout entre
+6,7 s e 9,3 s; mensagem do watchdog só após a expiração; rede de volta após o
+reset. Anote o timeout medido: se estiver fora da faixa, relate, porque
+`CONFIG_PIC32MZ_WDT_BASE_US` precisa ser corrigido.
+
 ## 6. Tabela de resultados
 
 | Teste | Descrição                                   | Aprovado | Observações |
@@ -563,6 +609,7 @@ vizinho (`ip neigh`) ou tire o IP duplicado.
 | T7    | Soak de 12 h                                | ☐        |             |
 | T8    | Requisito de tráfego não-IP                 | ☐        |             |
 | T9    | DHCP do IED através da bridge               | ☐        |             |
+| T10   | Watchdog: sem reinício espontâneo e reset na expiração | ☐ |           |
 
 ## 7. Como relatar um problema
 
@@ -580,6 +627,11 @@ modelo) e, se possível, o log do console serial.
   RJ45 (ainda não confirmado). A correção definitiva é uma revisão de
   hardware.
 - Half duplex e parceiro sem autonegociação não foram testados.
+- Watchdog: o auto-monitor só detecta travamento do kernel (temporizadores
+  parados, interrupções desabilitadas, crash). Uma **thread** travada
+  (Wi-Fi, bridge) com o kernel vivo **não** é detectada; isso exigiria um
+  supervisor de tarefas, ainda não implementado. A base de tempo do
+  watchdog também não foi medida (ver T10).
 - A velocidade é decidida uma vez na inicialização da interface. Mover o
   cabo entre parceiros que negociam velocidades diferentes sem reiniciar a
   porta não é suportado; com o limite de 10 Mbps isso não se aplica, pois
