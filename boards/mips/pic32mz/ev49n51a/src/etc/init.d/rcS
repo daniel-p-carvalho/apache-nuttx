@@ -1,0 +1,48 @@
+/****************************************************************************
+ * boards/mips/pic32mz/ev49n51a/src/etc/init.d/rcS
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ *
+ ****************************************************************************/
+
+#include <nuttx/config.h>
+
+/* eth0 has no factory MAC: use a locally administered one */
+
+ifconfig eth0 down
+ifconfig eth0 hw 02:e0:de:ad:be:ef
+ifconfig eth0 0.0.0.0 up
+
+/* wlan0 as a WPA2-PSK (CCMP) SoftAP */
+
+wapi mode wlan0 3
+wapi psk wlan0 CONFIG_EV49N51A_BRIDGE_PSK 3 2
+wapi freq wlan0 CONFIG_EV49N51A_BRIDGE_CHANNEL 1
+wapi essid wlan0 CONFIG_EV49N51A_BRIDGE_SSID 1
+ifconfig wlan0 0.0.0.0
+
+/* Bridge both ports; only br0 carries an address */
+
+brctl addbr br0
+brctl addif br0 eth0
+brctl addif br0 wlan0
+ifconfig br0 CONFIG_EV49N51A_BRIDGE_IPADDR netmask 255.255.255.0 up
+
+#ifdef CONFIG_EV49N51A_BRIDGE_DHCPD
+dhcpd_start br0
+#endif

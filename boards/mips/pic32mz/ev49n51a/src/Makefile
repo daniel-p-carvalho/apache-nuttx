@@ -24,6 +24,10 @@ include $(TOPDIR)/Make.defs
 
 CSRCS = pic32mz_boot.c pic32mz_bringup.c
 
+ifeq ($(CONFIG_EV49N51A_BRIDGE_BOOT),y)
+RCSRCS = etc/init.d/rcS
+endif
+
 ifeq ($(CONFIG_PIC32MZ_SPI1),y)
 CSRCS += pic32mz_spi.c
 endif
