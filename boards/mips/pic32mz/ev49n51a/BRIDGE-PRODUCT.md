@@ -391,11 +391,18 @@ os quadros (bridge transparente).
 **Se falhar**, anote qual servidor respondeu (IP do *server identifier*), a
 saída de `ps` e `ifconfig` e o log serial.
 
-Referência na bancada: com um R550 como IED (servidor DHCP em `10.0.0.1`,
-`eth0` ligada direto), o laptop no AP recebeu `10.0.0.100` com
-*server identifier* `10.0.0.1`; ping laptop → IED 0% de perda (~5,8 ms) e
-telnet ao IED funcionando. Esse teste foi feito antes do limite de 10 Mbps
-e deve ser repetido com a imagem atual.
+Referência na bancada (2026-10-10, imagem do produto com 10 Mbps e sem
+`dhcpd`): um R550 como IED, com servidor DHCP em `10.0.0.1` ligado à `eth0`
+pelo switch, e um laptop no SoftAP. Nas 4 associações (a inicial e 3
+reassociações) mais uma renovação, o laptop recebeu `10.0.0.100` com
+*server identifier* `10.0.0.1` (MAC do R550); `ping` laptop → `br0` com 100
+pacotes sem perda (0,8 ms a 9,4 ms); `Errors` de `eth0` e `wlan0` em 0;
+`ps` na placa sem `dhcpd`.
+
+Cuidado ao reproduzir com um PC na mesma rede: se o PC tiver o mesmo IP do
+IED (`10.0.0.1`), o `ping` do cliente Wi-Fi para esse IP é respondido
+localmente pelo próprio PC e não prova nada sobre o IED; confira o MAC do
+vizinho (`ip neigh`) ou tire o IP duplicado.
 
 ## 6. Tabela de resultados
 
