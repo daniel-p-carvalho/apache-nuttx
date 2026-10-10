@@ -3107,10 +3107,16 @@ static inline int pic32mz_phyinit(struct pic32mz_driver_s *priv)
 #ifdef CONFIG_PIC32MZ_PHY_AUTONEG
   /* Setup the Auto-negotiation advertisement: 100 or 10, and HD or FD */
 
+#ifdef CONFIG_PIC32MZ_PHY_10MBPS_ONLY
+  pic32mz_phywrite(phyaddr, MII_ADVERTISE,
+                 (MII_ADVERTISE_10BASETXFULL | MII_ADVERTISE_10BASETXHALF |
+                  MII_ADVERTISE_CSMA));
+#else
   pic32mz_phywrite(phyaddr, MII_ADVERTISE,
                  (MII_ADVERTISE_100BASETXFULL | MII_ADVERTISE_100BASETXHALF |
                   MII_ADVERTISE_10BASETXFULL  | MII_ADVERTISE_10BASETXHALF  |
                   MII_ADVERTISE_CSMA));
+#endif
 
   /* Then perform the auto-negotiation */
 
