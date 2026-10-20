@@ -1,6 +1,6 @@
 # EV49N51A – imagem do produto (bridge Ethernet ⇄ Wi-Fi): modo Ethernet 10 Mbps
 
-Base do branch: `upstream/master` de 2026-10-10 (inclui o Wi-Fi e o WPA3 do
+Base do branch: `upstream/master` de 2026-10-20 (inclui o Wi-Fi, o WPA3 e o watchdog do
 upstream). Este manual é para quem vai **testar** a imagem do produto com o
 IED. Ele explica o workaround de Ethernet, como verificar e controlar o modo
 de conexão e quais testes executar. Vale só para o branch
@@ -21,20 +21,24 @@ de conexão e quais testes executar. Vale só para o branch
 
 ## 2. O que a imagem faz no boot
 
-`boards/mips/pic32mz/ev49n51a/src/etc/init.d/rcS`:
+`boards/mips/pic32mz/ev49n51a/src/etc/init.d/rcS` tem uma única linha útil,
+`wifibridge start`, que faz tudo abaixo (o comando `wifibridge` é do
+`nuttx-apps`; os valores são os `CONFIG_SYSTEM_WIFIBRIDGE_*` ou a
+configuração salva na flash, ver 4.2):
 
 1. `eth0` recebe o MAC localmente administrado `02:e0:de:ad:be:ef` (o W1 não
-   tem MAC de fábrica) e sobe sem endereço.
+   tem MAC de fábrica, `CONFIG_PIC32MZ_ETH_MACADDR`) e sobe sem endereço.
 2. `wlan0` vira SoftAP WPA2-PSK: SSID `NuttX-BR`, senha `nuttxbridge`,
-   canal 6. Com `EV49N51A_BRIDGE_WPA3=y` (opcional, ver 3.1) o SoftAP é
+   canal 6. Com `wifibridge save -3` (opcional, ver 3.1) o SoftAP é
    WPA3-Personal.
 3. `br0` é criada com `eth0` e `wlan0` como portas e recebe `10.0.0.2/24`.
    Só `br0` tem endereço.
-4. **A placa não roda servidor DHCP** (`EV49N51A_BRIDGE_DHCPD=n`). O
-   servidor DHCP é o **IED**; a placa é uma bridge transparente entre
-   `eth0` e o SoftAP, e os clientes Wi-Fi recebem endereço do IED através
-   dela. O endereço `10.0.0.2` de `br0` é só de gerenciamento da placa e
-   deve ficar **fora da faixa de leases do IED**.
+4. **A placa não roda servidor DHCP** (sem `-d` e sem
+   `CONFIG_NETUTILS_WIFIBRIDGE_DHCPD`). O servidor DHCP é o **IED**; a placa
+   é uma bridge transparente entre `eth0` e o SoftAP, e os clientes Wi-Fi
+   recebem endereço do IED através dela. O endereço `10.0.0.2` de `br0` é
+   só de gerenciamento da placa e deve ficar **fora da faixa de leases do
+   IED**.
 
 5. **Watchdog**: `/dev/watchdog0` é registrado no boot e o *auto-monitor*
    do NuttX o inicia e o mantém vivo (a cada 1 s; timeout do hardware
@@ -44,13 +48,12 @@ de conexão e quais testes executar. Vale só para o branch
    `Last reset was caused by the watchdog` no console. Ver T10 e as
    [Limitações](#8-limitações).
 
-Os valores vêm das opções `EV49N51A_BRIDGE_SSID`, `_PSK`, `_CHANNEL`,
-`_IPADDR`, `_DHCPD` e `_WPA3` (Kconfig da placa). O servidor da placa
-continua compilado (`dhcpd_start br0` / `dhcpd_stop` no NSH) para uso de
-bancada quando **não** há outro servidor na rede; nunca deixe dois
-servidores ativos ao mesmo tempo. Atenção: na bancada, `dhcpd_start` mudou o
-endereço de `br0` para `10.0.0.1`; confira com `ifconfig br0` depois de
-iniciá-lo. `dhcpd_stop` (e não `kill`) é o jeito de pará-lo.
+O servidor DHCP da placa continua compilado (`dhcpd_start br0` / `dhcpd_stop`
+no NSH, ou `wifibridge start -d`) para uso de bancada quando **não** há outro
+servidor na rede; nunca deixe dois servidores ativos ao mesmo tempo. Atenção:
+na bancada, `dhcpd_start` mudou o endereço de `br0` para `10.0.0.1`; confira
+com `ifconfig br0` depois de iniciá-lo. `dhcpd_stop` (e não `kill`) é o jeito
+de pará-lo.
 
 ## 3. Compilar e gravar
 
@@ -70,16 +73,17 @@ Gera a **imagem do produto**: Ethernet limitada a 10 Mbps (o workaround) e
    which genromfs kconfig-tweak make
    ```
 
-2. **Baixe o NuttX e o apps lado a lado** (o `apps` com o `brctl`, ver 3.0):
+2. **Baixe o NuttX e o apps lado a lado** (o `apps` com a persistência do `wifibridge`, ver 3.0):
 
    ```sh
    mkdir nuttx-ws && cd nuttx-ws
    git clone -b feat/ev49n51a-bridge-product https://github.com/daniel-p-carvalho/apache-nuttx.git nuttx
    git clone https://github.com/apache/nuttx-apps.git apps
    cd apps
-   git fetch https://github.com/apache/nuttx-apps pull/3819/head
-   git cherry-pick FETCH_HEAD     # precisa de user.name/user.email no git
-   ls system/brctl/Kconfig        # tem que existir
+   git fetch https://github.com/daniel-p-carvalho/nuttx-apps feat/wifibridge-persist
+   git checkout FETCH_HEAD
+   ls system/wifibridge/Kconfig   # tem que existir
+   grep -c PERSIST netutils/wifibridge/Kconfig   # tem que ser > 0
    cd ../nuttx
    ```
 
@@ -89,13 +93,14 @@ Gera a **imagem do produto**: Ethernet limitada a 10 Mbps (o workaround) e
    ```sh
    export PATH=/opt/microchip/xc32/v6.00/bin:<pasta do genromfs>:$PATH
    ./tools/configure.sh -E -l ev49n51a:bridge
-   grep -E 'SYSTEM_BRCTL=|PHY_10MBPS_ONLY=|BRIDGE_DHCPD' .config
+   grep -E 'SYSTEM_WIFIBRIDGE=|WIFIBRIDGE_PERSIST=|PHY_10MBPS_ONLY=|WIFIBRIDGE_DHCPD' .config
    make -j$(nproc)
    ```
 
-   O `grep` tem que mostrar `CONFIG_SYSTEM_BRCTL=y`,
+   O `grep` tem que mostrar `CONFIG_SYSTEM_WIFIBRIDGE=y`,
+   `CONFIG_NETUTILS_WIFIBRIDGE_PERSIST=y`,
    `CONFIG_PIC32MZ_PHY_10MBPS_ONLY=y` e
-   `# CONFIG_EV49N51A_BRIDGE_DHCPD is not set`. Se não, pare (ver 3.0). O
+   `# CONFIG_NETUTILS_WIFIBRIDGE_DHCPD is not set`. Se não, pare (ver 3.0). O
    resultado é `nuttx.hex`.
 
 4. **Grave** (PICkit 3 no ICSP da placa, ~2,5 min; termina com
@@ -132,63 +137,52 @@ recomece com `./tools/configure.sh -E -l ev49n51a:bridge`: o `-E` descarta o
 `.config` anterior. Sem ele o `configure.sh` responde
 `No configuration change` e mantém as opções da variante anterior.
 
-### 3.0 Antes de tudo: o `nuttx-apps` precisa do `brctl`
+### 3.0 Antes de tudo: o `nuttx-apps` precisa do `wifibridge` com persistência
 
-O script de boot (`rcS`) cria a bridge com o comando `brctl`
-(`CONFIG_SYSTEM_BRCTL`), que ainda **não está** no `nuttx-apps` oficial: ele
-está no pull request
-[apache/nuttx-apps#3819](https://github.com/apache/nuttx-apps/pull/3819), uma
-única *commit* (`system/brctl`). Com um `nuttx-apps` sem ele:
+O script de boot (`rcS`) roda `wifibridge start`. O `wifibridge`, o `brctl` e
+os auxiliares de bridge do `netlib` já estão no `master` do `nuttx-apps`
+(PRs #3819 e #3876, aceitos), e `CONFIG_NET_BRIDGE` no do `nuttx`
+([apache/nuttx#20519](https://github.com/apache/nuttx/pull/20519)). O que
+**ainda não está** no `master` é a persistência (`wifibridge save/clear`), uma
+única *commit* sobre ele, no *branch* `feat/wifibridge-persist`. Com um
+`nuttx-apps` sem ela:
 
-* `./tools/configure.sh` não reclama, mas a opção `CONFIG_SYSTEM_BRCTL` é
-  descartada em silêncio (o Kconfig não a conhece);
-* o build termina normalmente, mas a placa sobe **sem `br0`**: no console
-  aparece `nsh: brctl: command not found` e `ifconfig` só mostra `eth0` e
-  `wlan0`. O mesmo acontece, por exemplo, ao normalizar o defconfig.
+* `./tools/configure.sh` não reclama, mas as opções
+  `CONFIG_NETUTILS_WIFIBRIDGE_PERSIST` e `_STORAGE` são descartadas em
+  silêncio (o Kconfig não as conhece);
+* o build termina normalmente, mas `wifibridge save` e `wifibridge clear`
+  respondem `Usage:` e a configuração não sobrevive a um reset.
 
-O `brctl` também depende de `CONFIG_NET_BRIDGE` no próprio `nuttx`
-([apache/nuttx#20519](https://github.com/apache/nuttx/pull/20519)). A *branch*
-do produto já o inclui; com outra base de `nuttx`, o `grep` da verificação
-abaixo falha mesmo com o `apps` correto.
-
-O diretório `apps` deve ficar ao lado do `nuttx` (`../apps`) e estar no
-*branch* do `brctl`. Escolha **uma** das formas:
-
-**A. Usar o *branch* da PR (mais simples).**
+O diretório `apps` deve ficar ao lado do `nuttx` (`../apps`):
 
 ```sh
 cd ../apps
-git remote add daniel https://github.com/daniel-p-carvalho/nuttx-apps.git
-git fetch daniel feat/brctl
-git checkout -b feat/brctl daniel/feat/brctl
-```
-
-**B. Se o seu `apps` já está em outro *branch* ou mais novo que o da PR**,
-aplique só a *commit* do `brctl` por cima dele:
-
-```sh
-cd ../apps
-git fetch https://github.com/apache/nuttx-apps pull/3819/head
-git cherry-pick FETCH_HEAD
+git fetch https://github.com/daniel-p-carvalho/nuttx-apps feat/wifibridge-persist
+git checkout FETCH_HEAD
 ```
 
 Confira antes de compilar:
 
 ```sh
-ls ../apps/system/brctl/Kconfig          # tem que existir
+ls ../apps/system/wifibridge/Kconfig                # tem que existir
+grep -c PERSIST ../apps/netutils/wifibridge/Kconfig # tem que ser > 0
 cd ../nuttx
 ./tools/configure.sh -E -l ev49n51a:bridge
-grep CONFIG_SYSTEM_BRCTL .config         # tem que mostrar =y
+grep WIFIBRIDGE_PERSIST .config          # tem que mostrar =y
 ```
 
-Se o `grep` não mostrar `CONFIG_SYSTEM_BRCTL=y`, o `apps` está sem o
-`brctl`: não compile, volte ao passo acima. Depois de corrigir o `apps`, repita com
+Depois de corrigir o `apps`, repita com
 `./tools/configure.sh -E -l ev49n51a:bridge` (ou `make distclean` antes): sem
-o `-E` ele responde `No configuration change` e mantém o `.config` antigo,
-ainda sem o `brctl` (e o *build* misturado pode falhar no *link* com
-`undefined reference to romfs_img`). Quando a PR #3819 for aceita,
-volte o `apps` para o `master` (`git checkout master && git pull`) e esta
+o `-E` ele responde `No configuration change` e mantém o `.config` antigo
+(e o *build* misturado pode falhar no *link* com
+`undefined reference to romfs_img`). Quando a persistência for aceita no
+`master`, volte o `apps` para ele (`git checkout master && git pull`) e esta
 etapa deixa de ser necessária.
+
+A persistência usa as duas últimas páginas (8 KB, a partir de `0x900fe000`) da
+flash de programa como `/dev/mtdblock1`
+(`CONFIG_PIC32MZ_PROGMEM`); a imagem termina antes dela (o *linker*
+recusa o build se não couber).
 
 ### 3.0.1 Ferramentas e comandos
 
@@ -202,11 +196,9 @@ make -j$(nproc)
 
 Instalação das ferramentas: ver o [Anexo 9](#9-anexo-instalação-das-ferramentas).
 
-O resultado é `nuttx.hex`. Se você mudar uma opção que afeta o `rcS`
-(`EV49N51A_BRIDGE_DHCPD`, `_WPA3`, SSID, senha, canal, endereço), rode
-`touch boards/mips/pic32mz/ev49n51a/src/etc/init.d/rcS` antes do `make`: o
-`/etc` embutido só é regenerado quando o próprio `rcS` muda, não quando o
-`.config` muda. O primeiro build precisa de rede (baixa a biblioteca Wi-Fi,
+O resultado é `nuttx.hex`. SSID, senha, canal e endereço padrão são os
+`CONFIG_SYSTEM_WIFIBRIDGE_*` (`SSID`, `PASSPHRASE`, `CHANNEL`, `IPADDR`);
+em campo, mude-os com `wifibridge save` (4.2), sem recompilar. O primeiro build precisa de rede (baixa a biblioteca Wi-Fi,
 ver 3.1).
 
 Gravação com o PICkit 3 (leva ~2 min):
@@ -243,14 +235,14 @@ exigir SAE; clientes só WPA2 não conseguem associar. Para habilitar:
 
 ```sh
 ./tools/configure.sh -E -l ev49n51a:bridge
-kconfig-tweak --enable PIC32MZ_W1_BA414E --enable EV49N51A_BRIDGE_WPA3
+kconfig-tweak --enable PIC32MZ_W1_BA414E
 make olddefconfig
-touch boards/mips/pic32mz/ev49n51a/src/etc/init.d/rcS
 make -j$(nproc)
 ```
 
-- O `touch` é necessário: o `rcS` só é reprocessado quando o próprio arquivo
-  muda, não quando o `.config` muda.
+Depois de gravar, na placa: `wifibridge stop`, `wifibridge save -3` e reset
+(ou só `wifibridge start -3` para testar sem salvar).
+
 - O acelerador BA414E precisa do microcódigo. Por padrão
   (`PIC32MZ_W1_BA414E_UCODE_BUILTIN`) o build baixa o `drv_ba414e.c` do
   Harmony `crypto` v3.9.0 e extrai as 810 palavras (confere o sha256;
@@ -298,6 +290,11 @@ A imagem do produto **não tem** `mdio`, `mw`, `mb` nem `mh`. Tem:
 | `ping <ip>`            | Alcançabilidade e perda                          |
 | `iperf`                | Vazão TCP/UDP, cliente/servidor                  |
 | `brctl addif/delif`    | Adiciona/remove porta da bridge                  |
+| `wifibridge status`    | Estado do SoftAP e da bridge, e se há config salva |
+| `wifibridge stop`      | Derruba o SoftAP e a bridge                      |
+| `wifibridge start [opções]` | Sobe o SoftAP e a bridge (usa a config salva, se houver) |
+| `wifibridge save [opções]`  | Grava a config na flash (`-s` SSID, `-p` senha, `-c` canal, `-3` WPA3, `-a` IP, `-d` DHCP) |
+| `wifibridge clear`     | Apaga a config salva (volta aos padrões)         |
 | `dhcpd_stop`           | Para o servidor DHCP                             |
 | `dhcpd_start br0`      | Inicia o servidor DHCP                           |
 
@@ -317,6 +314,10 @@ TX: Queued   Sent     Errors   Timeouts Bytes
 - `Queued` e `Sent` do TX devem ser **iguais** com o link ocioso. Uma pequena
   diferença sob carga UDP pesada *originada pela placa* é a fila de TX
   descartando quadros, não erro de link.
+
+As opções de `start` valem sobre a configuração salva (ou sobre os padrões
+`CONFIG_SYSTEM_WIFIBRIDGE_*`, se não houver) e só `save` as grava. A senha é
+guardada **em texto puro** na flash; ela precisa ter de 8 a 63 caracteres.
 
 `ifdown eth0` / `ifup eth0` numa porta da bridge foi testado repetidamente e
 não trava a bridge.
@@ -596,6 +597,27 @@ hardware desta função (a unidade de tempo do watchdog, `CONFIG_PIC32MZ_WDT_BAS
 reset. Anote o timeout medido: se estiver fora da faixa, relate, porque
 `CONFIG_PIC32MZ_WDT_BASE_US` precisa ser corrigido.
 
+### T11 – Persistência da configuração
+
+**Objetivo:** confirmar que `wifibridge save` sobrevive a um reset e que
+`wifibridge clear` volta aos padrões. Este fluxo foi validado em bancada com
+a configuração `wifibridge` do `ev49n51a`; na imagem do produto, é a primeira
+vez que roda junto com o `rcS` de boot.
+
+**Passos** (console serial)
+
+1. `wifibridge status` logo após o boot: SSID `NuttX-BR`, canal 6, sem
+   configuração salva.
+2. `wifibridge stop`, depois `wifibridge save -s TesteBR -p senhaTeste123 -c 11`
+   e reset da placa (seção 3.0.1).
+3. No boot, `wifibridge status` deve mostrar SSID `TesteBR` e canal 11, e um
+   cliente Wi-Fi deve associar com a nova senha.
+4. `wifibridge stop`, `wifibridge clear` e reset: de volta ao SSID `NuttX-BR`.
+5. `wifibridge save -p curta` deve ser **recusado** (senha menor que 8).
+
+**Aprovado se:** passos 3 e 4 como descrito, e o passo 5 recusado, sem que
+o `rcS` suba o AP duas vezes (uma só linha `wlan: AP started` por boot).
+
 ## 6. Tabela de resultados
 
 | Teste | Descrição                                   | Aprovado | Observações |
@@ -610,6 +632,7 @@ reset. Anote o timeout medido: se estiver fora da faixa, relate, porque
 | T8    | Requisito de tráfego não-IP                 | ☐        |             |
 | T9    | DHCP do IED através da bridge               | ☐        |             |
 | T10   | Watchdog: sem reinício espontâneo e reset na expiração | ☐ |           |
+| T11   | Persistência: save sobrevive ao reset, clear restaura | ☐ |           |
 
 ## 7. Como relatar um problema
 
@@ -632,6 +655,9 @@ modelo) e, se possível, o log do console serial.
   (Wi-Fi, bridge) com o kernel vivo **não** é detectada; isso exigiria um
   supervisor de tarefas, ainda não implementado. A base de tempo do
   watchdog também não foi medida (ver T10).
+- A senha salva com `wifibridge save` fica em **texto puro** nas 2 últimas
+  páginas da flash de programa (8 KB, `0x900fe000`); quem lê a flash a lê.
+  Não grave em laço: a flash tem um número limitado de ciclos de apagamento.
 - A velocidade é decidida uma vez na inicialização da interface. Mover o
   cabo entre parceiros que negociam velocidades diferentes sem reiniciar a
   porta não é suportado; com o limite de 10 Mbps isso não se aplica, pois
