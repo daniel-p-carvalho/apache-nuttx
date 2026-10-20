@@ -33,8 +33,9 @@ configuração salva na flash, ver 4.2):
    WPA3-Personal.
 3. `br0` é criada com `eth0` e `wlan0` como portas e recebe `10.0.0.2/24`.
    Só `br0` tem endereço.
-4. **A placa não roda servidor DHCP** (sem `-d` e sem
-   `CONFIG_NETUTILS_WIFIBRIDGE_DHCPD`). O servidor DHCP é o **IED**; a placa
+4. **A placa não roda servidor DHCP** (padrão: sem `-d`; o servidor está
+   compilado, `CONFIG_NETUTILS_WIFIBRIDGE_DHCPD=y`, e se liga em campo, ver
+   4.2). O servidor DHCP é o **IED**; a placa
    é uma bridge transparente entre `eth0` e o SoftAP, e os clientes Wi-Fi
    recebem endereço do IED através dela. O endereço `10.0.0.2` de `br0` é
    só de gerenciamento da placa e deve ficar **fora da faixa de leases do
@@ -49,7 +50,7 @@ configuração salva na flash, ver 4.2):
    [Limitações](#8-limitações).
 
 O servidor DHCP da placa continua compilado (`dhcpd_start br0` / `dhcpd_stop`
-no NSH, ou `wifibridge start -d`) para uso de bancada quando **não** há outro
+no NSH, ou `wifibridge start -d`, ver 4.2) para uso de bancada quando **não** há outro
 servidor na rede; nunca deixe dois servidores ativos ao mesmo tempo. Atenção:
 na bancada, `dhcpd_start` mudou o endereço de `br0` para `10.0.0.1`; confira
 com `ifconfig br0` depois de iniciá-lo. `dhcpd_stop` (e não `kill`) é o jeito
@@ -100,7 +101,7 @@ Gera a **imagem do produto**: Ethernet limitada a 10 Mbps (o workaround) e
    O `grep` tem que mostrar `CONFIG_SYSTEM_WIFIBRIDGE=y`,
    `CONFIG_NETUTILS_WIFIBRIDGE_PERSIST=y`,
    `CONFIG_PIC32MZ_PHY_10MBPS_ONLY=y` e
-   `# CONFIG_NETUTILS_WIFIBRIDGE_DHCPD is not set`. Se não, pare (ver 3.0). O
+   `CONFIG_NETUTILS_WIFIBRIDGE_DHCPD=y`. Se não, pare (ver 3.0). O
    resultado é `nuttx.hex`.
 
 4. **Grave** (PICkit 3 no ICSP da placa, ~2,5 min; termina com
@@ -315,9 +316,43 @@ TX: Queued   Sent     Errors   Timeouts Bytes
   diferença sob carga UDP pesada *originada pela placa* é a fila de TX
   descartando quadros, não erro de link.
 
-As opções de `start` valem sobre a configuração salva (ou sobre os padrões
-`CONFIG_SYSTEM_WIFIBRIDGE_*`, se não houver) e só `save` as grava. A senha é
-guardada **em texto puro** na flash; ela precisa ter de 8 a 63 caracteres.
+#### Configuração em campo: `wifibridge start` e `wifibridge save`
+
+Sem opções, `wifibridge start` usa a configuração salva na flash e, se não
+houver nenhuma, os padrões `CONFIG_SYSTEM_WIFIBRIDGE_*` do build. É isso que
+o `rcS` roda no boot. As opções abaixo valem para `start` e para `save`:
+
+| Opção           | Efeito                                              | Padrão |
+|-----------------|-----------------------------------------------------|--------|
+| `-s <ssid>`     | SSID do SoftAP                                      | `NuttX-BR` |
+| `-p <senha>`    | Senha (8 a 63 caracteres; menos que isso é recusado) | `nuttxbridge` |
+| `-c <canal>`    | Canal 2,4 GHz, 1 a 13                               | 6 |
+| `-3`            | WPA3-Personal (SAE) em vez de WPA2-PSK; precisa do `PIC32MZ_W1_BA414E` (3.1) | WPA2 |
+| `-a <ip>`       | Endereço de `br0`; a máscara é sempre 255.255.255.0 | `10.0.0.2` |
+| `-d`            | Liga o servidor DHCP em `br0`                       | desligado |
+| `-D`            | Desliga o servidor DHCP                             | |
+
+* As opções são aplicadas **sobre** a configuração salva (ou sobre os
+  padrões, se não houver). O que você não citar fica como estava.
+* `start` só usa as opções, não as grava: vale até o próximo reset. `save`
+  as grava na flash e não inicia nada; o próximo boot (ou um
+  `wifibridge start`) as usa.
+* `wifibridge status` mostra a configuração em uso; `wifibridge clear`
+  apaga a salva e volta aos padrões do build.
+* A senha é guardada **em texto puro** na flash.
+
+Exemplos (com a bridge parada: `wifibridge stop`):
+
+```
+nsh> wifibridge save -d                  # DHCP passa a subir em todo boot
+nsh> wifibridge save -D                  # desliga de novo (o resto é mantido)
+nsh> wifibridge save -s Planta1 -p senha-da-planta -c 11 -a 10.0.0.7
+nsh> wifibridge start -d                 # só até o próximo reset
+```
+
+Atenção com o `-d`: o servidor DHCP do IED e o da placa não podem estar
+ativos na mesma rede ao mesmo tempo. Na imagem do produto o DHCP é do IED,
+então deixe o `-d` desligado, que é o padrão.
 
 `ifdown eth0` / `ifup eth0` numa porta da bridge foi testado repetidamente e
 não trava a bridge.
@@ -614,8 +649,11 @@ vez que roda junto com o `rcS` de boot.
    cliente Wi-Fi deve associar com a nova senha.
 4. `wifibridge stop`, `wifibridge clear` e reset: de volta ao SSID `NuttX-BR`.
 5. `wifibridge save -p curta` deve ser **recusado** (senha menor que 8).
+6. `wifibridge save -d` e reset: `ps` deve listar o `dhcpd` (com o IED
+   desligado da rede!); depois `wifibridge save -D` e reset: o `dhcpd` some
+   e as outras opções salvas continuam.
 
-**Aprovado se:** passos 3 e 4 como descrito, e o passo 5 recusado, sem que
+**Aprovado se:** passos 3, 4 e 6 como descrito, e o passo 5 recusado, sem que
 o `rcS` suba o AP duas vezes (uma só linha `wlan: AP started` por boot).
 
 ## 6. Tabela de resultados
