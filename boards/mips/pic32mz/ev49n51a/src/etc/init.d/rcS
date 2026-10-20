@@ -22,31 +22,8 @@
 
 #include <nuttx/config.h>
 
-/* eth0 has no factory MAC: use a locally administered one */
+/* The SoftAP, the bridge and its ports come from the wifibridge command
+ * (see CONFIG_SYSTEM_WIFIBRIDGE_*, or the configuration saved in flash).
+ */
 
-ifconfig eth0 down
-ifconfig eth0 hw 02:e0:de:ad:be:ef
-ifconfig eth0 0.0.0.0 up
-
-/* wlan0 as a WPA2-PSK (or WPA3-SAE) SoftAP, CCMP */
-
-wapi mode wlan0 3
-#ifdef CONFIG_EV49N51A_BRIDGE_WPA3
-wapi psk wlan0 CONFIG_EV49N51A_BRIDGE_PSK 3 3
-#else
-wapi psk wlan0 CONFIG_EV49N51A_BRIDGE_PSK 3 2
-#endif
-wapi freq wlan0 CONFIG_EV49N51A_BRIDGE_CHANNEL 1
-wapi essid wlan0 CONFIG_EV49N51A_BRIDGE_SSID 1
-ifconfig wlan0 0.0.0.0
-
-/* Bridge both ports; only br0 carries an address */
-
-brctl addbr br0
-brctl addif br0 eth0
-brctl addif br0 wlan0
-ifconfig br0 CONFIG_EV49N51A_BRIDGE_IPADDR netmask 255.255.255.0 up
-
-#ifdef CONFIG_EV49N51A_BRIDGE_DHCPD
-dhcpd_start br0
-#endif
+wifibridge start
